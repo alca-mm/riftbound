@@ -125,6 +125,87 @@ def is_shop_candidate(item) -> bool:
     return False
 
 
+# --- availability_status signals (pure/offline; derived from item text only) ---
+# Ordered so negatives (which CONTAIN positives as substrings) win first.
+# "not available"/"unavailable" contain "available"; "nicht verfügbar"/"nicht
+# lieferbar" contain "verfügbar"/"lieferbar" — checking sold_out FIRST keeps them
+# out of the available bucket.
+_SOLD_OUT_SIGNALS = (
+    "sold out",
+    "sold-out",
+    "soldout",
+    "out of stock",
+    "out-of-stock",
+    "not available",
+    "unavailable",
+    "ausverkauft",
+    "nicht verfügbar",
+    "nicht lieferbar",
+)
+_PREORDER_SIGNALS = (
+    "preorder",
+    "pre-order",
+    "pre order",
+    "vorbestellung",
+    "vorbestellbar",
+)
+_AVAILABLE_SIGNALS = (
+    "available",
+    "in stock",
+    "in-stock",
+    "lieferbar",
+    "verfügbar",
+    "auf lager",
+)
+_COMING_SOON_SIGNALS = (
+    "coming soon",
+    "coming-soon",
+)
+
+# Higher rank = more sendable in the test webhook.
+AVAILABILITY_RANK = {
+    "available": 4,
+    "preorder": 3,
+    "unknown": 2,
+    "coming_soon": 1,
+    "sold_out": 0,
+}
+
+
+def availability_status(item) -> str:
+    """Classify an item's availability from its own text as one of:
+    'available', 'preorder', 'coming_soon', 'sold_out', 'unknown'. Pure/offline
+    — derived solely from the item's title/text/url/source fields, no network.
+
+    Classified in a fixed order (first match wins) because the negative phrases
+    contain the positive phrases as substrings: sold_out is checked before
+    available so "not available"/"unavailable"/"nicht verfügbar"/"nicht lieferbar"
+    classify as sold_out rather than available.
+    """
+    item = item or {}
+    title = str(item.get("title", "") or "")
+    text = str(item.get("text", "") or "")
+    url = str(item.get("url", "") or "")
+    source = str(item.get("source", "") or "")
+    combined = (title + " " + text + " " + url + " " + source).lower()
+
+    if any(sig in combined for sig in _SOLD_OUT_SIGNALS):
+        return "sold_out"
+    if any(sig in combined for sig in _PREORDER_SIGNALS):
+        return "preorder"
+    if any(sig in combined for sig in _AVAILABLE_SIGNALS):
+        return "available"
+    if any(sig in combined for sig in _COMING_SOON_SIGNALS):
+        return "coming_soon"
+    return "unknown"
+
+
+def availability_score(item) -> int:
+    """``AVAILABILITY_RANK[availability_status(item)]`` — higher = more sendable
+    in the test webhook. Pure/offline."""
+    return AVAILABILITY_RANK[availability_status(item)]
+
+
 class WebhookError(Exception):
     """Raised when sending a Discord message fails.
 

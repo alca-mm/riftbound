@@ -101,3 +101,18 @@ def test_readme_documents_markdown_local_policy():
     # Extra Markdown docs may exist locally but are git-ignored; README is tracked.
     assert "git-ignored" in low
     assert "readme" in low
+
+
+def test_readme_documents_github_actions_interval():
+    low = _readme().lower()
+    # GitHub Actions runs on an interval, not continuously.
+    assert "interval" in low
+    assert "continuous" in low          # "does not continuously ..."
+    assert "every" in low and "2 hours" in low
+
+
+def test_readme_documents_test_webhook_availability_preference():
+    low = _readme().lower()
+    assert "pre-order" in low
+    assert "available" in low
+    assert "availability is not confirmed" in low   # honest unknown fallback

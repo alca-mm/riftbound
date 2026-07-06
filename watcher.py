@@ -110,11 +110,27 @@ def run(
     return _run_normal(summary, relevant, state_path, webhook_url, send_fn)
 
 
+# Honest per-availability-status prefix for the test message. It never falsely
+# claims an item is available.
+_TEST_STATUS_PREFIX = {
+    "available": "[TEST] Available Riftbound merch item found",
+    "preorder": "[TEST] Pre-order Riftbound merch item found",
+    "coming_soon": "[TEST] Upcoming Riftbound merch item found (coming soon)",
+    "unknown": "[TEST] Shop item candidate found (availability not confirmed)",
+    "sold_out": "[TEST] Riftbound merch item found (currently sold out)",
+}
+
+
 def _run_test_webhook(summary, candidates, webhook_url, send_fn, rng) -> dict:
-    """Send exactly one test message for a random Riftbound hit; never write state."""
-    # Only Riftbound SHOP/MERCH items that also yield a valid clickable link — so
-    # the test message is a real product/store item (not a get-started/how-to-play
-    # article) and always contains a working link.
+    """Send exactly one test message for a Riftbound SHOP/MERCH item; never write state.
+
+    Only Riftbound shop/merch items that yield a valid clickable link are eligible
+    (never a get-started/how-to-play article). Among those, an available / pre-order
+    item is preferred; an unknown-availability item is a valid fallback (clearly
+    marked as unconfirmed); sold_out is last. If the static HTML exposes no
+    shop/product link at all, it sends nothing and explains how to point
+    WATCH_TARGETS at a concrete product URL.
+    """
     pool = [
         it for it in candidates
         if relevance.is_riftbound(it)
@@ -122,14 +138,16 @@ def _run_test_webhook(summary, candidates, webhook_url, send_fn, rng) -> dict:
         and notify.best_item_url(it)
     ]
     logger.info(
-        "Mode=%s: %d Riftbound shop/merch candidate(s) available for the test message.",
+        "Mode=%s: %d Riftbound shop/merch candidate(s) in the static HTML.",
         MODE_TEST_WEBHOOK, len(pool),
     )
 
     if not pool:
         logger.info(
-            "No Riftbound shop/merch candidate found; sending nothing and leaving "
-            "state unchanged."
+            "No Riftbound shop/product link found in the static HTML; sending "
+            "nothing and leaving state unchanged. If the merch page is "
+            "JavaScript-rendered, set WATCH_TARGETS to a concrete product or "
+            "collection URL to test."
         )
         return summary
 
@@ -137,11 +155,19 @@ def _run_test_webhook(summary, candidates, webhook_url, send_fn, rng) -> dict:
         logger.error("DISCORD_WEBHOOK_URL is not set; cannot send the test message. State unchanged.")
         return summary
 
-    chosen = rng.choice(pool)
-    content = "[TEST] " + notify.format_message(chosen, relevance.relevance_reasons(chosen))
+    # Prefer available / pre-order items; unknown is a valid fallback; sold_out last.
+    best_score = max(notify.availability_score(it) for it in pool)
+    best = [it for it in pool if notify.availability_score(it) == best_score]
+    chosen = rng.choice(best)
+    status = notify.availability_status(chosen)
+    prefix = _TEST_STATUS_PREFIX.get(status, _TEST_STATUS_PREFIX["unknown"])
+    content = prefix + "\n" + notify.format_message(chosen, relevance.relevance_reasons(chosen))
     send_fn(webhook_url, content)
     summary["posted"] = 1
-    logger.info("Sent exactly one test message for a random Riftbound hit. State unchanged.")
+    logger.info(
+        "Sent one test message for a Riftbound shop/merch item (availability=%s). "
+        "State unchanged.", status,
+    )
     return summary
 
 

@@ -672,3 +672,102 @@ def test_normal_run_posts_new_merch_shop_item(tmp_path):
     assert len(send.calls) == 1
     assert "t1-player-bundle" in send.calls[0][1]
     assert summary["posted"] == 1
+
+
+# --- Test-webhook prefers available / pre-order merch items ------------------
+
+AVAILABLE_MERCH = {
+    "title": "Riftbound T1 Signature Edition",
+    "url": "https://merch.riotgames.com/de-de/category/riftbound/signature-edition",
+    "source": "https://merch.riotgames.com/de-de/category/riftbound/",
+    "text": "In stock — available now",
+}
+PREORDER_MERCH = {
+    "title": "Riftbound T1 Player Bundle",
+    "url": "https://merch.riotgames.com/de-de/category/riftbound/player-bundle",
+    "source": "https://merch.riotgames.com/de-de/category/riftbound/",
+    "text": "Pre-order",
+}
+SOLDOUT_MERCH = {
+    "title": "Riftbound Worlds Champion Collection",
+    "url": "https://merch.riotgames.com/de-de/category/riftbound/worlds-champion-collection",
+    "source": "https://merch.riotgames.com/de-de/category/riftbound/",
+    "text": "Sold out",
+}
+UNKNOWN_MERCH = {
+    "title": "Riftbound T1 Deck Box",
+    "url": "https://merch.riotgames.com/de-de/category/riftbound/deck-box",
+    "source": "https://merch.riotgames.com/de-de/category/riftbound/",
+    "text": "",
+}
+
+
+def test_test_webhook_prefers_available_over_sold_out(tmp_path):
+    sp = _state_path(tmp_path)
+    send = Recorder()
+    summary = watcher.run(
+        "test-webhook-random-riftbound", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory([SOLDOUT_MERCH, AVAILABLE_MERCH]), send_fn=send,
+    )
+    assert len(send.calls) == 1
+    content = send.calls[0][1]
+    assert "signature-edition" in content                 # the available item
+    assert "worlds-champion-collection" not in content    # not the sold-out one
+    assert summary["posted"] == 1
+    assert not os.path.exists(sp)
+
+
+def test_test_webhook_prefers_preorder_over_unknown(tmp_path):
+    sp = _state_path(tmp_path)
+    send = Recorder()
+    watcher.run(
+        "test-webhook-random-riftbound", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory([UNKNOWN_MERCH, PREORDER_MERCH]), send_fn=send,
+    )
+    assert len(send.calls) == 1
+    content = send.calls[0][1]
+    assert "player-bundle" in content                     # the pre-order item
+    assert "pre-order" in content.lower()
+
+
+def test_test_webhook_unknown_availability_is_marked_not_confirmed(tmp_path):
+    sp = _state_path(tmp_path)
+    send = Recorder()
+    summary = watcher.run(
+        "test-webhook-random-riftbound", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory([UNKNOWN_MERCH]), send_fn=send,
+    )
+    assert len(send.calls) == 1
+    content = send.calls[0][1]
+    assert "availability not confirmed" in content        # honest fallback
+    assert "in stock" not in content.lower()              # never falsely claims availability
+    assert "deck-box" in content
+    assert summary["posted"] == 1
+    assert not os.path.exists(sp)
+
+
+def test_test_webhook_prefers_available_merch_over_get_started(tmp_path):
+    sp = _state_path(tmp_path)
+    send = Recorder()
+    watcher.run(
+        "test-webhook-random-riftbound", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory([GET_STARTED_ITEM, AVAILABLE_MERCH]), send_fn=send,
+    )
+    assert len(send.calls) == 1
+    content = send.calls[0][1]
+    assert "merch.riotgames.com" in content
+    assert "get-started" not in content
+
+
+def test_test_webhook_only_articles_aborts_cleanly_with_log(tmp_path, caplog):
+    sp = _state_path(tmp_path)
+    send = Recorder()
+    with caplog.at_level(logging.INFO):
+        summary = watcher.run(
+            "test-webhook-random-riftbound", state_path=sp, webhook_url=WEBHOOK,
+            fetch_fn=fetch_fn_factory([GET_STARTED_ITEM]), send_fn=send,
+        )
+    assert send.calls == []
+    assert summary["posted"] == 0
+    assert not os.path.exists(sp)
+    assert "no riftbound shop/product link" in caplog.text.lower()

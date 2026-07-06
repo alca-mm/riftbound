@@ -405,3 +405,89 @@ def test_network_failure_has_no_leaky_exception_context():
     # The original (url-bearing) exception must not be chained onto WebhookError.
     assert excinfo.value.__context__ is None
     assert excinfo.value.__cause__ is None
+
+
+# ---------------------------------------------------------------------------
+# availability_status / availability_score — pure/offline availability detection
+# (derive availability from the item's OWN text fields; NO network requests)
+# ---------------------------------------------------------------------------
+def _item(text="", title="", url="", source=""):
+    return {"title": title, "text": text, "url": url, "source": source}
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["available", "in stock", "in-stock", "lieferbar", "verfügbar", "auf lager"],
+)
+def test_availability_status_available(text):
+    assert notify.availability_status(_item(text=text)) == "available"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["pre-order", "preorder", "pre order", "vorbestellbar", "vorbestellung"],
+)
+def test_availability_status_preorder(text):
+    assert notify.availability_status(_item(text=text)) == "preorder"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["sold out", "sold-out", "soldout", "ausverkauft", "out of stock", "out-of-stock"],
+)
+def test_availability_status_sold_out(text):
+    assert notify.availability_status(_item(text=text)) == "sold_out"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["not available", "unavailable", "nicht verfügbar", "nicht lieferbar"],
+)
+def test_availability_status_negatives_are_sold_out_not_available(text):
+    # These CONTAIN the positive substrings "available"/"verfügbar"/"lieferbar",
+    # so they must be checked first and classified as sold_out, NOT available.
+    assert notify.availability_status(_item(text=text)) == "sold_out"
+
+
+@pytest.mark.parametrize("text", ["coming soon", "coming-soon"])
+def test_availability_status_coming_soon(text):
+    assert notify.availability_status(_item(text=text)) == "coming_soon"
+
+
+def test_availability_status_unknown_when_no_signal():
+    # A plain merch product title with empty text gives no availability signal.
+    item = {
+        "title": "Riftbound T1 Deck Box",
+        "text": "",
+        "url": "https://merch.riotgames.com/products/riftbound-t1-deck",
+        "source": "https://merch.riotgames.com/",
+    }
+    assert notify.availability_status(item) == "unknown"
+
+
+def test_availability_status_signal_may_come_from_any_field():
+    # The signal is derived from title + text + url + source combined.
+    assert notify.availability_status(_item(title="Sold Out")) == "sold_out"
+    assert notify.availability_status(_item(url="https://merch.riotgames.com/preorder/x")) == "preorder"
+    assert notify.availability_status(_item(source="https://x/in-stock/")) == "available"
+
+
+def test_availability_status_handles_none_item():
+    assert notify.availability_status(None) == "unknown"
+
+
+def test_availability_score_matches_rank_table():
+    assert notify.availability_score(_item(text="in stock")) == notify.AVAILABILITY_RANK["available"]
+    assert notify.availability_score(_item(text="preorder")) == notify.AVAILABILITY_RANK["preorder"]
+    assert notify.availability_score(_item(text="")) == notify.AVAILABILITY_RANK["unknown"]
+    assert notify.availability_score(_item(text="coming soon")) == notify.AVAILABILITY_RANK["coming_soon"]
+    assert notify.availability_score(_item(text="sold out")) == notify.AVAILABILITY_RANK["sold_out"]
+
+
+def test_availability_score_orders_available_over_preorder_over_unknown_over_coming_soon_over_sold_out():
+    available = notify.availability_score(_item(text="available"))
+    preorder = notify.availability_score(_item(text="pre-order"))
+    unknown = notify.availability_score(_item(text=""))
+    coming_soon = notify.availability_score(_item(text="coming soon"))
+    sold_out = notify.availability_score(_item(text="sold out"))
+    assert available > preorder > unknown > coming_soon > sold_out

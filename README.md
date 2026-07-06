@@ -139,12 +139,22 @@ python watcher.py --dry-run
 python watcher.py --test-webhook-random-riftbound
 ```
 
-- Sends exactly **one** Discord test message (prefixed `[TEST]`) for one random
-  Riftbound **shop / merch item**, containing a **clickable link**.
+- Sends exactly **one** Discord test message (prefixed `[TEST]`) for one
+  Riftbound **shop / merch item**, containing a **clickable link**. It now prefers
+  an **available** or **pre-order** item, using availability signals like
+  "available" / "in stock" / "lieferbar" / "pre-order" / "vorbestellbar".
+- If a shop item is found but its availability is unknown, it still sends one test
+  message clearly marked that **availability is not confirmed** — it never falsely
+  claims the item is available.
 - Never modifies `state.json`.
-- Needs a real local `DISCORD_WEBHOOK_URL`. If no Riftbound **shop/merch item** is
-  found (e.g. only general articles), it aborts cleanly and sends nothing — it
-  will **not** send a get-started / how-to-play link.
+- Needs a real local `DISCORD_WEBHOOK_URL`. If only general articles are found
+  (e.g. "how to play" / get-started, newsletters, top decks), it aborts cleanly
+  and sends nothing — it will **not** send a get-started / how-to-play link.
+- If the merch page is JavaScript-rendered and exposes no product links in the
+  static HTML, the test sends nothing and logs that no shop / product link was
+  found — set `WATCH_TARGETS` to a concrete product / collection URL to test in
+  that case.
+- The bot never buys anything; you click the link yourself.
 
 ### Normal watcher
 
@@ -191,13 +201,23 @@ gh repo create riot --private --source . --remote origin --push
 
 ## Run on GitHub Actions (no laptop needed)
 
-Once the workflow is enabled, **your laptop does not need to stay on** — GitHub
-Actions runs the watcher for you.
+GitHub Actions does not continuously or live-check the pages — it runs the watcher
+on a schedule (interval), currently roughly every ~2 hours (cron `0 */2 * * *`).
+Once the workflow is enabled and the `DISCORD_WEBHOOK_URL` repository Secret is
+set, **your laptop does not need to stay on** — GitHub Actions runs the watcher
+for you. Beyond the schedule you can additionally trigger it manually:
+**Actions → Riftbound Watch → Run workflow**, choosing `dry-run`, `test-webhook`,
+or `watch`.
 
 - Workflow: **Riftbound Watch** (`.github/workflows/riftbound-watch.yml`).
-- `schedule`: a gentle cron `0 */2 * * *` (every ~2 hours, never sub-hourly).
+- `schedule`: a gentle cron `0 */2 * * *` (every ~2 hours, never sub-hourly). It
+  is an **interval**, not continuously live monitoring.
 - `workflow_dispatch`: manual runs with a `mode` input — `dry-run`,
   `test-webhook`, or `watch` (default the safe `dry-run`).
+- Mode behavior: `dry-run` never sends; `test-webhook` sends exactly one test
+  message when a shop/merch candidate is found; `watch` writes a baseline on the
+  first run (no message) and later posts only new relevant shop/merch hits (no
+  duplicate spam).
 - The webhook comes **only** from the GitHub repository **Secret**
   `DISCORD_WEBHOOK_URL` — never from `.env` on the runner (local runs still use
   `.env`). No secret value ever appears in the YAML.
