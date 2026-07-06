@@ -392,6 +392,7 @@ def _capture_run_webhook(monkeypatch):
     def capture(mode, **kwargs):
         captured["mode"] = mode
         captured["webhook_url"] = kwargs.get("webhook_url")
+        captured["targets"] = kwargs.get("targets")
         return watcher._new_summary(mode)
 
     monkeypatch.setattr(watcher, "run", capture)
@@ -557,3 +558,30 @@ def test_test_webhook_skips_riftbound_without_usable_link(tmp_path):
     assert send.calls == []
     assert summary["posted"] == 0
     assert not os.path.exists(sp)
+
+
+# --- Configurable watch targets (WATCH_TARGETS env / DEFAULT_TARGETS) --------
+
+MERCH_RIFTBOUND_URL = (
+    "https://merch.riotgames.com/de-de/category/riftbound/?page=1&sort=dateDesc"
+)
+
+
+def test_main_defaults_to_default_targets(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("WATCH_TARGETS", raising=False)
+    captured = _capture_run_webhook(monkeypatch)
+    assert watcher.main(["--dry-run"]) == 0
+    assert captured["targets"] == fetch.DEFAULT_TARGETS
+    # The primary target is the Riot merch Riftbound category page.
+    assert captured["targets"][0] == MERCH_RIFTBOUND_URL
+
+
+def test_main_uses_watch_targets_env_override(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
+    monkeypatch.setenv("WATCH_TARGETS", MERCH_RIFTBOUND_URL)
+    captured = _capture_run_webhook(monkeypatch)
+    assert watcher.main(["--dry-run"]) == 0
+    assert captured["targets"] == [MERCH_RIFTBOUND_URL]

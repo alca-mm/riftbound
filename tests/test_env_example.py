@@ -1,12 +1,8 @@
-"""Tests for the .env.example template and the Discord webhook setup guide.
+"""Tests for the .env.example template.
 
-These are documentation/hygiene tests. They guard two invariants:
-
-  1. `.env.example` ships only a PLACEHOLDER webhook URL (never a real one) and
-     warns the user not to commit their real `.env`.
-  2. `docs/DISCORD_WEBHOOK_SETUP.md` actually explains the important concepts
-     (the env var name, that the URL is a secret, the CLI test/dry-run modes,
-     and the baseline-on-first-run behavior).
+These are documentation/hygiene tests. They guard that `.env.example` ships only
+a PLACEHOLDER webhook URL (never a real one) and warns the user not to commit
+their real `.env`. (The webhook setup guidance now lives in the single README.md.)
 
 The repo root is computed from this file's location so the tests do not depend
 on the current working directory.
@@ -16,7 +12,6 @@ import re
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_EXAMPLE = os.path.join(REPO_ROOT, ".env.example")
-SETUP_DOC = os.path.join(REPO_ROOT, "docs", "DISCORD_WEBHOOK_SETUP.md")
 
 # A deliberately fake token string that must NEVER appear in the committed
 # example file. If a real value ever gets pasted in, these tests are the
@@ -95,22 +90,3 @@ def test_env_example_no_reallooking_webhook_token():
             assert PLACEHOLDER in segment or not re.fullmatch(
                 r"[0-9a-fA-F]{12,}", segment
             ), "webhook URL segment looks like a real id/token: %r" % segment
-
-
-# ---------------------------------------------------------------------------
-# docs/DISCORD_WEBHOOK_SETUP.md — must explain the key concepts
-# ---------------------------------------------------------------------------
-def test_setup_doc_exists():
-    assert os.path.isfile(SETUP_DOC), "docs/DISCORD_WEBHOOK_SETUP.md is missing"
-
-
-def test_setup_doc_mentions_key_concepts():
-    content = _read(SETUP_DOC).lower()
-    for needle in (
-        "discord_webhook_url",
-        "secret",
-        "--test-webhook-random-riftbound",
-        "--dry-run",
-        "baseline",
-    ):
-        assert needle in content, "setup doc is missing mention of %r" % needle

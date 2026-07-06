@@ -250,3 +250,42 @@ def test_conditional_token_relevant_with_t1_anchor():
     it = item("T1 Doran signature card in the collection")
     assert relevance.is_relevant(it) is True
     assert "doran" in relevance.relevance_reasons(it)
+
+
+# ---------------------------------------------------------------------------
+# Newsletter / top-deck / article noise: generic content with NO Riftbound/T1
+# collection signal must stay rejected. These are regression guards proving the
+# filter is not too broad — they must pass WITHOUT modifying relevance.py.
+# ---------------------------------------------------------------------------
+def test_negative_weekly_newsletter_top_decks():
+    assert relevance.is_relevant(
+        item("Weekly newsletter: top decks and patch highlights")
+    ) is False
+
+
+def test_negative_top_5_decks_to_climb():
+    assert relevance.is_relevant(
+        item("Top 5 decks to climb this week")
+    ) is False
+
+
+def test_negative_riot_games_newsletter_signup():
+    assert relevance.is_relevant(
+        item("Riot Games newsletter sign-up")
+    ) is False
+
+
+def test_negative_best_budget_decks_this_patch():
+    assert relevance.is_relevant(
+        item("Best budget decks this patch")
+    ) is False
+
+
+def test_positive_control_merch_riftbound_still_relevant():
+    # Positive control: a real merch item must still pass while the noise above
+    # is rejected — proof the filter stays correctly scoped, not merely narrow.
+    it = item(
+        "Riftbound x T1 Worlds Champion Collection",
+        url="https://merch.riotgames.com/de-de/category/riftbound/",
+    )
+    assert relevance.is_relevant(it) is True

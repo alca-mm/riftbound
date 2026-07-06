@@ -14,11 +14,15 @@ here is intentionally minimal (``KEY=VALUE`` lines).
 """
 import logging
 import os
+from urllib.parse import urlparse
 
 logger = logging.getLogger("riot.config")
 
 # The single environment variable that carries the Discord webhook URL.
 WEBHOOK_ENV_VAR = "DISCORD_WEBHOOK_URL"
+
+# Optional environment variable that overrides the default watch targets.
+WATCH_TARGETS_ENV_VAR = "WATCH_TARGETS"
 
 # Default location of the optional local ``.env`` fallback file.
 DEFAULT_ENV_PATH = ".env"
@@ -138,3 +142,59 @@ def resolve_webhook_url(*, environ=None, env_path: str = DEFAULT_ENV_PATH):
     # 3. Nothing configured.
     logger.debug("%s is not configured.", WEBHOOK_ENV_VAR)
     return None
+
+
+def parse_targets(text: str) -> list:
+    """Parse watch-target URLs from ``text`` into an ordered list.
+
+    Rules:
+      * Entries are separated by newlines AND commas.
+      * Surrounding whitespace is stripped from each entry.
+      * Blank entries, and entries whose first non-space char is ``#``, are
+        ignored (so commented lines drop out).
+      * Only ``http`` / ``https`` URLs are kept (checked via ``urlparse`` scheme
+        AND a non-empty network location).
+      * Original order is preserved.
+
+    Never raises. Never logs the parsed values.
+    """
+    result = []
+    if not text:
+        return result
+
+    for raw_line in text.splitlines():
+        for raw_entry in raw_line.split(","):
+            entry = raw_entry.strip()
+            if not entry or entry.startswith("#"):
+                continue
+            try:
+                parsed = urlparse(entry)
+            except Exception:
+                continue
+            if parsed.scheme in ("http", "https") and parsed.netloc:
+                result.append(entry)
+    return result
+
+
+def resolve_targets(*, environ=None, default=None):
+    """Resolve the watch-target list, honouring a :data:`WATCH_TARGETS` override.
+
+    If ``WATCH_TARGETS`` (from ``environ``, defaulting to :data:`os.environ`) is
+    set and yields at least one valid http(s) URL, that parsed list is returned.
+    Otherwise ``default`` is returned UNCHANGED (the caller passes
+    ``fetch.DEFAULT_TARGETS``).
+
+    Never mutates ``environ`` / ``os.environ`` and never logs the values.
+    """
+    if environ is None:
+        environ = os.environ
+
+    override = environ.get(WATCH_TARGETS_ENV_VAR)
+    if override:
+        targets = parse_targets(override)
+        if targets:
+            logger.debug("Resolved watch targets from %s.", WATCH_TARGETS_ENV_VAR)
+            return targets
+
+    logger.debug("%s not set; using default watch targets.", WATCH_TARGETS_ENV_VAR)
+    return default

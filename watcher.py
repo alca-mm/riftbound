@@ -262,8 +262,12 @@ def main(argv=None) -> int:
         else:
             logger.warning("DISCORD_WEBHOOK_URL is not set; no messages can be sent.")
 
+    # Targets come from the WATCH_TARGETS env var if set, else the defaults
+    # (primary = the Riot merch Riftbound category page).
+    targets = config.resolve_targets(default=fetch.DEFAULT_TARGETS)
+
     try:
-        summary = run(mode, state_path=args.state_path, webhook_url=webhook_url)
+        summary = run(mode, targets=targets, state_path=args.state_path, webhook_url=webhook_url)
     except Exception as exc:
         # Backstop: never let an error reach the user with a secret attached.
         # Redact both the gated value and the raw resolved value — the raw value

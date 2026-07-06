@@ -22,12 +22,13 @@ USER_AGENT = "riot-watcher/0.1 (+notify-only; no automated purchase)"
 # Default network timeout, in seconds.
 DEFAULT_TIMEOUT = 15
 
-# A small handful of PUBLIC Riot / Riftbound merch and news pages.
+# A small handful of PUBLIC Riot / Riftbound merch pages.
 DEFAULT_TARGETS = [
+    # PRIMARY: Riot merch store, Riftbound category, newest first.
+    "https://merch.riotgames.com/de-de/category/riftbound/?page=1&sort=dateDesc",
     "https://merch.riotgames.com/",
+    # Secondary official Riftbound page (still strictly filtered by relevance).
     "https://www.riftbound.com/",
-    "https://www.riftbound.com/en-us/news/",
-    "https://www.leagueoflegends.com/en-us/news/",
 ]
 
 

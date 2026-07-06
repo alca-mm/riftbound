@@ -157,6 +157,20 @@ def test_public_api_constants():
     assert all(isinstance(t, str) for t in fetch.DEFAULT_TARGETS)
 
 
+def test_default_targets_primary_is_merch_riftbound_category():
+    # The Riot merch Riftbound category page (newest first) is the PRIMARY target.
+    assert (
+        fetch.DEFAULT_TARGETS[0]
+        == "https://merch.riotgames.com/de-de/category/riftbound/?page=1&sort=dateDesc"
+    )
+
+
+def test_default_targets_are_all_http_urls_with_merch():
+    for target in fetch.DEFAULT_TARGETS:
+        assert target.startswith(("http://", "https://"))
+    assert any("merch.riotgames.com" in target for target in fetch.DEFAULT_TARGETS)
+
+
 # ---------------------------------------------------------------------------
 # Session lifecycle: a self-created requests.Session must be reused across
 # targets and closed afterwards (no per-URL session leak).

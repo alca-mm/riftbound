@@ -1,8 +1,8 @@
 """Repo-hygiene tests — guard the repository before it is published to GitHub.
 
 These tests never touch the network and never read a real secret. They assert
-that the ignore rules, the manual upload guide, and every tracked text file are
-safe to publish for this notify-only Discord watcher.
+that the ignore rules and every tracked text file are safe to publish for this
+notify-only Discord watcher.
 
 Repo root is derived from this file's location so the tests work regardless of
 the current working directory.
@@ -95,43 +95,6 @@ def test_gitignore_excludes_essentials():
         "env/",
     ):
         assert entry in content, f".gitignore must exclude {entry!r}"
-
-
-# ---------------------------------------------------------------------------
-# docs/GITHUB_UPLOAD.md
-# ---------------------------------------------------------------------------
-def test_github_upload_guide_exists():
-    assert os.path.isfile(os.path.join(REPO_ROOT, "docs", "GITHUB_UPLOAD.md"))
-
-
-def test_github_upload_guide_mentions_key_points():
-    content = _read(os.path.join(REPO_ROOT, "docs", "GITHUB_UPLOAD.md")).lower()
-
-    # Git is driven by the user / run manually, not by automation.
-    assert "git" in content
-    assert any(
-        k in content
-        for k in ("yourself", "manually", "by the user", "by you")
-    ), "guide must state that Git is run by the user / manually"
-
-    # .env must never be committed.
-    assert ".env" in content
-    assert any(
-        k in content
-        for k in (
-            "must never",
-            "must not",
-            "never commit",
-            "do not commit",
-            "never be committed",
-        )
-    ), "guide must state that .env must not be committed"
-
-    # state.json must never be committed.
-    assert "state.json" in content
-
-    # The secret env var is named.
-    assert "discord_webhook_url" in content
 
 
 # ---------------------------------------------------------------------------

@@ -3,9 +3,15 @@
 A small, **notify-only** Python watcher. It checks a handful of **public**
 Riot / Riftbound pages and, when something new and relevant to the
 **Riftbound × T1 Worlds Champion Collection** appears, posts a message to a
-Discord webhook.
+Discord webhook. This README is the single source of truth — everything you need
+to install it, use Discord, upload it to GitHub, and run it on GitHub Actions is
+here.
 
-> **Start here for GitHub upload and Discord setup:** [`docs/SELF_SERVICE_SETUP.md`](docs/SELF_SERVICE_SETUP.md)
+Primary target page:
+
+```
+https://merch.riotgames.com/de-de/category/riftbound/?page=1&sort=dateDesc
+```
 
 It focuses narrowly on:
 
@@ -39,9 +45,9 @@ will not:
 - ❌ print or log secrets
 
 The Discord webhook URL is treated as a **secret**. It is never written to logs,
-exceptions, tests, state, or the change docs.
+exceptions, tests, workflows, or change files. You click product links manually.
 
-## Setup
+## Local install
 
 Requires Python 3.9+ (developed on 3.12).
 
@@ -52,16 +58,47 @@ python -m venv .venv
 
 pip install -r requirements.txt          # runtime dependency (requests)
 pip install -r requirements-dev.txt      # dev extras (pytest) — only to run the tests
+python -m pytest tests/ -q               # everything should pass
 ```
 
-Copy `.env.example` to `.env` and set your real webhook there (`.env` is
-git-ignored — **never commit it**), or set the environment variable directly
-(never commit or share the value):
+## Create a Discord webhook
+
+You need **Manage Webhooks** permission on the target server/channel.
+
+1. Open Discord and go to the server and channel you want notifications in.
+2. Open **Channel Settings** (the gear icon next to the channel name).
+3. Go to **Integrations** → **Webhooks**.
+4. Click **New Webhook** (optionally name it / confirm the channel).
+5. Click **Copy Webhook URL**.
+
+The copied URL looks like `https://discord.com/api/webhooks/…/…` — a numeric id
+segment and a long token segment. **Both are secret.** Never post it in GitHub,
+the README, issues, logs, or screenshots. If it ever leaks, delete the webhook in
+Discord and create a new one.
+
+## Configure the webhook locally (`.env`)
+
+Set the webhook via the `DISCORD_WEBHOOK_URL` environment variable, or a local
+`.env` file. Copy the placeholder template and edit the copy:
+
+```bash
+# Windows PowerShell
+copy .env.example .env
+# Linux/Mac
+cp .env.example .env
+```
+
+Then set your real webhook in `.env`, replacing `REPLACE_ME`:
+
+```
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/…/…
+```
+
+Or export it in your shell instead of using `.env`:
 
 ```bash
 # Windows PowerShell
 $env:DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/…"
-
 # Linux/Mac
 export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/…"
 ```
@@ -70,29 +107,16 @@ export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/…"
 | --------------------- | ----------------------------------------- |
 | `DISCORD_WEBHOOK_URL` | Discord webhook to send notifications to. |
 
-> **Webhook resolution:** `DISCORD_WEBHOOK_URL` can be set either as a real
-> environment variable **or** loaded from a local `.env` file. The environment
-> variable **takes precedence** over `.env`. Copying `.env.example` to `.env` is
-> allowed, but `.env` must **never** be committed. `.env.example` contains only
-> placeholders — a value still containing `REPLACE_ME` is treated as **not
-> configured**, so nothing is sent. `--dry-run` needs no webhook and works even
-> without a `.env`, while `--test-webhook-random-riftbound` needs a real local
-> webhook and sends exactly one test message.
+Rules:
 
-## Modes
+- The shell environment variable **takes precedence** over `.env`.
+- **Never commit `.env`** (it is git-ignored). `.env.example` keeps only
+  `REPLACE_ME` placeholders.
+- A value still containing `REPLACE_ME` is treated as **not configured**, so
+  nothing is sent.
+- `--dry-run` needs no webhook and works even without a `.env`.
 
-### Normal watcher
-
-```bash
-python watcher.py
-```
-
-- Checks the public target pages and detects relevant hits.
-- **First ever run:** writes a baseline to `state.json` and sends **no** Discord
-  message.
-- **Later runs:** posts only **new** relevant hits and updates `state.json`.
-- Already-known hits are never re-posted.
-- `state.json` is only ever modified in this mode.
+## Local modes
 
 ### Dry run
 
@@ -100,10 +124,9 @@ python watcher.py
 python watcher.py --dry-run
 ```
 
-- Checks the pages and logs the relevance analysis.
 - Sends **no** Discord message.
 - Never creates or modifies `state.json`.
-- Ideal for local testing without side effects.
+- Logs the relevance analysis only — the safest way to preview.
 
 ### Webhook test with a random Riftbound hit
 
@@ -111,39 +134,147 @@ python watcher.py --dry-run
 python watcher.py --test-webhook-random-riftbound
 ```
 
-- Picks exactly **one** random Riftbound hit from the fetched public results.
-- Sends exactly **one** Discord test message.
+- Sends exactly **one** Discord test message (prefixed `[TEST]`) for one random
+  Riftbound hit, containing a **clickable link**.
 - Never modifies `state.json`.
-- If no Riftbound hit is found, it aborts cleanly and logs clearly — without
-  changing state.
+- Needs a real local `DISCORD_WEBHOOK_URL`. If no Riftbound hit is found, it
+  aborts cleanly and sends nothing.
 
-Optional: `--state-path PATH` points at an alternative state file.
+### Normal watcher
 
-## Secrets & GitHub safety
+```bash
+python watcher.py
+```
 
-- `DISCORD_WEBHOOK_URL` is a **secret** — never commit it and never paste it into
-  the README, issues, logs, or screenshots.
-- `.env` and `state.json` are git-ignored and must **never** be uploaded.
-- A safe template with placeholders only is provided in
-  [`.env.example`](.env.example).
+- **First ever run:** writes a baseline to `state.json` and sends **no** message.
+- **Later runs:** post only **new** relevant hits (no duplicates) and update
+  `state.json`, each message with the best clickable link.
+- `state.json` is only ever modified in this mode.
+- Optional: `--state-path PATH` points at an alternative state file.
 
-See the dedicated guides:
+## Upload to GitHub (you run all Git yourself)
 
-- [`docs/DISCORD_WEBHOOK_SETUP.md`](docs/DISCORD_WEBHOOK_SETUP.md) — how to create
-  and safely use a Discord webhook, and how to test locally.
-- [`docs/GITHUB_UPLOAD.md`](docs/GITHUB_UPLOAD.md) — how to upload this project to
-  GitHub yourself. All Git steps are run **only by you**, never by automation.
+Git is done **only by you** — no automation runs Git. `.env` and `state.json` are
+git-ignored and must **never** be pushed. Before uploading: run the tests, and
+confirm no `.env`, no `state.json`, and no real webhook value are staged.
+
+> **Only run these yourself — automation must never run Git.**
+
+```bash
+# 1. Create a new EMPTY repo in your browser at https://github.com/new
+#    (do not let GitHub add a README/.gitignore/license).
+
+# 2. Locally, sanity-check that .env and state.json are NOT listed:
+git status
+
+# 3. Initialize, stage, commit, and push:
+git init
+git add .
+git status                 # confirm .env and state.json do NOT appear
+git commit -m "Initial commit: notify-only Riftbound x T1 Discord watcher"
+git branch -M main
+git remote add origin https://github.com/<you>/riot.git
+git push -u origin main
+```
+
+Optional, with the GitHub CLI (again, **run it yourself**):
+
+```bash
+gh repo create riot --private --source . --remote origin --push
+```
+
+## Run on GitHub Actions (no laptop needed)
+
+Once the workflow is enabled, **your laptop does not need to stay on** — GitHub
+Actions runs the watcher for you.
+
+- Workflow: **Riftbound Watch** (`.github/workflows/riftbound-watch.yml`).
+- `schedule`: a gentle cron `0 */2 * * *` (every ~2 hours, never sub-hourly).
+- `workflow_dispatch`: manual runs with a `mode` input — `dry-run`,
+  `test-webhook`, or `watch` (default the safe `dry-run`).
+- The webhook comes **only** from the GitHub repository **Secret**
+  `DISCORD_WEBHOOK_URL` — never from `.env` on the runner (local runs still use
+  `.env`). No secret value ever appears in the YAML.
+- **State / duplicate protection:** `state.json` is persisted between runs via
+  GitHub Actions **cache** (rolling key). A cache miss simply starts a fresh
+  baseline and sends nothing, so a miss can never cause duplicate spam.
+- The first `watch` run writes a baseline and sends nothing; later runs post only
+  new relevant hits. It stays **notify-only**.
+
+The separate `.github/workflows/tests.yml` is test-only: it runs the pytest suite
+and compile checks, never runs the watcher against real pages, never sends a
+Discord message, and needs no secrets.
+
+### Set the GitHub Secret
+
+In your GitHub repository:
+
+1. **Settings → Secrets and variables → Actions**.
+2. Click **New repository secret**.
+3. Name: `DISCORD_WEBHOOK_URL`. Value: your real Discord webhook URL.
+
+Never share the secret or write it into any file.
+
+### Trigger a run manually
+
+- GitHub UI: **Actions → Riftbound Watch → Run workflow**, then pick a mode.
+- Optional user-only CLI (documentation examples — **you** run these, never
+  automation):
+
+> **Only run these yourself.**
+
+```bash
+gh workflow run riftbound-watch.yml -f mode=dry-run
+gh workflow run riftbound-watch.yml -f mode=test-webhook
+gh workflow run riftbound-watch.yml -f mode=watch
+```
+
+## Operation / scheduling
+
+- GitHub Actions is enough; your laptop does not need to stay on.
+- Keep any schedule **gentle** (a few times per hour at most) — do not poll
+  aggressively.
+- To run it yourself instead, use cron / Task Scheduler at a gentle interval,
+  e.g. cron: `*/15 * * * * cd /path/to/riot && /path/to/riot/.venv/bin/python watcher.py >> watcher.log 2>&1`.
+- Never add auto-buy, login, checkout, or captcha automation.
+
+## Configurable targets
+
+By default the watcher checks the primary merch Riftbound page (first) plus the
+merch home and the official Riftbound page. You can override the target list
+without editing code by setting the `WATCH_TARGETS` environment variable to a
+comma- or newline-separated list of URLs (GitHub Actions can set it in the
+workflow env). Unset → the merch-primary defaults are used.
+
+## Troubleshooting
+
+- **First normal run sent nothing** — correct; the first run only writes a
+  baseline. Messages start on later runs, for new relevant hits only.
+- **`--dry-run` never sends** — by design it logs analysis and never touches
+  `state.json`.
+- **The webhook test needs a real local `DISCORD_WEBHOOK_URL`** — set it in your
+  shell or `.env` before `--test-webhook-random-riftbound`.
+- **An unedited `.env.example` / `REPLACE_ME` does not send** — replace it with
+  your real webhook.
+- **A corrupt `state.json` is safely re-baselined** — a missing/invalid state
+  file logs a warning and starts a fresh baseline; it never crashes.
+- **No new messages can be correct** — only new relevant hits after the baseline
+  are posted, so a quiet channel usually just means nothing new appeared.
+- **The merch page is JavaScript-rendered**, so a plain HTML GET may expose fewer
+  product anchors than the live page. If coverage is thin, add specific stable
+  product / collection URLs via `WATCH_TARGETS` — do not scrape more aggressively.
+- **Fix false hits by extending the relevance tests**, not by scraping harder.
 
 ## State file
 
 `state.json` stores the ids of items already seen so they are not re-posted. It
 is created/updated only by the normal watcher. A dummy example of the schema is
 in [`state.example.json`](state.example.json). The real `state.json` is
-git-ignored.
+git-ignored and must never be committed.
 
 State handling is robust: a missing file yields a fresh baseline, a
-corrupt/invalid file is ignored (fresh baseline + a warning), and writes are
-atomic (temp file + `os.replace`) so a crash never leaves a half-written file.
+corrupt/invalid file is re-baselined (with a warning), and writes are atomic
+(temp file + `os.replace`) so a crash never leaves a half-written file.
 
 ## Project layout
 
@@ -153,14 +284,14 @@ riot/
   fetch.py              # defensive public-page fetching + link extraction
   relevance.py          # narrow Riftbound × T1 relevance filter
   state.py              # robust, atomic state persistence + stable item ids
-  notify.py             # Discord webhook sender + secret redaction
+  notify.py             # Discord webhook sender + secret redaction + best-link
+  config.py             # webhook + target resolution (env / .env, WATCH_TARGETS)
   requirements.txt      # runtime dependency (requests)
   requirements-dev.txt  # dev extras (pytest)
   state.example.json    # dummy example state (no secrets)
   .env.example          # placeholder env template (copy to .env, never commit .env)
   .gitignore
-  .github/workflows/    # CI: runs tests + compile (no secrets, never posts)
-  docs/                 # DISCORD_WEBHOOK_SETUP.md, GITHUB_UPLOAD.md, changes/
+  .github/workflows/    # tests.yml (test-only CI) + riftbound-watch.yml (scheduled watcher)
   tests/                # pytest suite
 ```
 
@@ -169,14 +300,11 @@ riot/
 ```bash
 pip install -r requirements-dev.txt
 python -m pytest tests/ -q
-python -m py_compile watcher.py fetch.py relevance.py state.py notify.py
+python -m py_compile watcher.py fetch.py relevance.py state.py notify.py config.py
 ```
 
 The suite covers first-run baseline behavior, no-duplicate posting, posting only
 new hits, dry-run isolation, the single-message test-webhook mode (including the
-zero-Riftbound-hit case), the relevance filter (positive and negative examples),
-and that the webhook URL never leaks into logs or exceptions.
-
-On GitHub, [`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs the
-same tests and compile checks on every push and pull request. CI never runs the
-watcher against real pages, never sends a Discord message, and needs no secrets.
+zero-Riftbound-hit case), the relevance filter, the best-clickable-link
+selection, target resolution, workflow safety, and that the webhook URL never
+leaks into logs or exceptions.

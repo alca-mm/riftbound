@@ -1,0 +1,62 @@
+name: Riftbound Watch
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run mode"
+        type: choice
+        default: dry-run
+        options:
+          - dry-run
+          - test-webhook
+          - watch
+  schedule:
+    # Gentle: every 2 hours at minute 0. Never sub-hourly.
+    - cron: "0 */2 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: riftbound-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    env:
+      # On the schedule there is no input, so default to the safe normal watch mode.
+      MODE: ${{ github.event.inputs.mode || 'watch' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install runtime dependencies
+        run: pip install -r requirements.txt
+      - name: Restore watcher state
+        uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: riftbound-state-${{ github.run_id }}
+          restore-keys: |
+            riftbound-state-
+      - name: Run watcher
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          echo "Running watcher in mode: ${MODE}"
+          case "${MODE}" in
+            dry-run)      python watcher.py --dry-run ;;
+            test-webhook) python watcher.py --test-webhook-random-riftbound ;;
+            watch)        python watcher.py ;;
+            *) echo "Unknown mode: ${MODE}" >&2; exit 1 ;;
+          esac
+      - name: Save watcher state
+        if: ${{ always() && env.MODE == 'watch' }}
+        uses: actions/cache/save@v4
+        with:
+          path: state.json
+          key: riftbound-state-${{ github.run_id }}

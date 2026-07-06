@@ -212,3 +212,97 @@ def test_resolve_defaults_environ_to_os_environ(monkeypatch, tmp_path):
     monkeypatch.setenv("DISCORD_WEBHOOK_URL", ENV_VALUE)
     missing = tmp_path / "does-not-exist.env"
     assert config.resolve_webhook_url(env_path=str(missing)) == ENV_VALUE
+
+
+# ---------------------------------------------------------------------------
+# Target resolution — WATCH_TARGETS override for the notify-only watcher.
+# Obviously-fake URLs only; never a real secret.
+# ---------------------------------------------------------------------------
+TARGET_A = "https://merch.riotgames.com/de-de/category/riftbound/?page=1&sort=dateDesc"
+TARGET_B = "https://example.test/x"
+DEFAULT_TARGETS = [TARGET_A, "https://merch.riotgames.com/", "https://www.riftbound.com/"]
+
+
+def test_watch_targets_env_var_constant():
+    assert config.WATCH_TARGETS_ENV_VAR == "WATCH_TARGETS"
+
+
+def test_parse_targets_splits_newlines_and_commas():
+    text = TARGET_A + "\n" + TARGET_B + " , https://example.test/y"
+    assert config.parse_targets(text) == [TARGET_A, TARGET_B, "https://example.test/y"]
+
+
+def test_parse_targets_ignores_blanks_and_comment_lines():
+    text = "\n".join(
+        [
+            "",
+            "   ",
+            "# a comment line",
+            "   # indented comment",
+            TARGET_A,
+            "",
+            TARGET_B,
+        ]
+    )
+    assert config.parse_targets(text) == [TARGET_A, TARGET_B]
+
+
+def test_parse_targets_drops_non_http_entries():
+    text = "\n".join(
+        [
+            TARGET_A,
+            "ftp://example.test/file",
+            "not-a-url",
+            "javascript:alert(1)",
+            "mailto:me@example.test",
+            TARGET_B,
+        ]
+    )
+    assert config.parse_targets(text) == [TARGET_A, TARGET_B]
+
+
+def test_parse_targets_preserves_order():
+    text = TARGET_B + "\n" + TARGET_A
+    assert config.parse_targets(text) == [TARGET_B, TARGET_A]
+
+
+def test_parse_targets_empty_returns_empty_list():
+    assert config.parse_targets("") == []
+    assert config.parse_targets("   \n # only a comment\n") == []
+
+
+def test_resolve_targets_uses_env_override_when_set():
+    environ = {config.WATCH_TARGETS_ENV_VAR: TARGET_A + "\n" + TARGET_B}
+    result = config.resolve_targets(environ=environ, default=DEFAULT_TARGETS)
+    assert result == [TARGET_A, TARGET_B]
+
+
+def test_resolve_targets_returns_default_when_unset():
+    result = config.resolve_targets(environ={}, default=DEFAULT_TARGETS)
+    assert result == DEFAULT_TARGETS
+    assert result is DEFAULT_TARGETS
+
+
+def test_resolve_targets_returns_default_when_env_empty_or_no_urls():
+    for value in ("", "   ", "# just a comment", "not-a-url\nftp://x/y"):
+        environ = {config.WATCH_TARGETS_ENV_VAR: value}
+        result = config.resolve_targets(environ=environ, default=DEFAULT_TARGETS)
+        assert result is DEFAULT_TARGETS
+
+
+def test_resolve_targets_does_not_mutate_environ():
+    environ = {config.WATCH_TARGETS_ENV_VAR: TARGET_A}
+    before = dict(environ)
+    config.resolve_targets(environ=environ, default=DEFAULT_TARGETS)
+    assert environ == before
+
+
+def test_resolve_targets_does_not_mutate_os_environ():
+    os_environ_before = dict(os.environ)
+    config.resolve_targets(environ={}, default=DEFAULT_TARGETS)
+    assert dict(os.environ) == os_environ_before
+
+
+def test_resolve_targets_defaults_environ_to_os_environ(monkeypatch):
+    monkeypatch.setenv("WATCH_TARGETS", TARGET_A + "," + TARGET_B)
+    assert config.resolve_targets(default=DEFAULT_TARGETS) == [TARGET_A, TARGET_B]
