@@ -60,24 +60,27 @@ def test_schedule_is_gentle():
             "cron expression %r should have five fields" % expr
         )
         minute = fields[0]
-        # A fixed numeric minute means the job runs at most once per hour.
-        assert minute.isdigit(), (
-            "cron minute field %r must be a fixed number (not '*' or '*/n') "
-            "so the schedule runs at most hourly" % minute
+        # The floor is "no more frequent than every 30 minutes". Accept a
+        # fixed numeric minute (<= hourly), an explicit "0,30", or "*/30".
+        acceptable = minute.isdigit() or minute in ("0,30", "*/30")
+        assert acceptable, (
+            "cron minute field %r must be a fixed number, '0,30' or '*/30' "
+            "so the schedule runs no more often than every 30 minutes" % minute
         )
-    # Belt-and-suspenders: none of these aggressive patterns may appear.
+    # Belt-and-suspenders: none of these aggressive (sub-30-minute) patterns
+    # may appear anywhere in the workflow text.
     aggressive = [
         "* * * * *",
-        "*/1 * * * *",
+        "*/1 ",
         "*/5",
         "*/10",
         "*/15",
         "*/20",
-        "*/30",
+        "*/25",
     ]
     for pattern in aggressive:
         assert pattern not in text, (
-            "aggressive/sub-hourly schedule pattern found: %r" % pattern
+            "aggressive/sub-30-minute schedule pattern found: %r" % pattern
         )
 
 
@@ -134,7 +137,7 @@ def test_state_persistence_present():
     assert "state.json" in text, "Workflow should cache the state.json file"
 
 
-def test_runs_watcher_for_all_three_modes():
+def test_runs_watcher_for_all_modes():
     text = _read(WORKFLOW_PATH)
     assert "watcher.py" in text, "Workflow should run the watcher"
     assert "--dry-run" in text, "Workflow should support the dry-run mode"
@@ -142,6 +145,28 @@ def test_runs_watcher_for_all_three_modes():
         "Workflow should support the test-webhook mode"
     )
     assert "watch" in text, "Workflow should support the normal watch mode"
+    assert "--status-report" in text, (
+        "Workflow should support the status-report mode"
+    )
+
+
+def test_offers_status_report_mode():
+    text = _read(WORKFLOW_PATH)
+    assert "status-report" in text, (
+        "Workflow should offer a 'status-report' mode in the dispatch options"
+    )
+    assert "python watcher.py --status-report" in text, (
+        "Workflow should dispatch the watcher's status report"
+    )
+
+
+def test_schedule_runs_status_report_by_default():
+    text = _read(WORKFLOW_PATH)
+    # The scheduled run supplies no input, so MODE must default to the
+    # notify-only status report rather than the live watch.
+    assert "|| 'status-report'" in text, (
+        "The scheduled run (no input) should default MODE to 'status-report'"
+    )
 
 
 def test_targets_merch_riftbound_category():

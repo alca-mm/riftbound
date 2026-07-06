@@ -491,3 +491,170 @@ def test_availability_score_orders_available_over_preorder_over_unknown_over_com
     coming_soon = notify.availability_score(_item(text="coming soon"))
     sold_out = notify.availability_score(_item(text="sold out"))
     assert available > preorder > unknown > coming_soon > sold_out
+
+
+# ---------------------------------------------------------------------------
+# format_status_report — periodic heartbeat listing AVAILABLE merch, NO links
+# (pure/offline; splits already-relevant items by availability and formats them)
+# ---------------------------------------------------------------------------
+# Exact status lines. × is the × glyph — spell it out so the assertion is
+# byte-for-byte exact without embedding the raw glyph in the test source.
+_NO_T1_LINE = "No new Riftbound × T1 / Worlds Champion Collection hits found."
+_AVAIL_HEADER = "Available Riftbound merch items:"
+_PREORDER_HEADER = "Preorder Riftbound merch items:"
+_NO_AVAIL_LINE = "No available Riftbound merch items detected in the static product data."
+
+
+def _merch(title, *, text="", url="", source=""):
+    """A fake already-relevant shop/merch item dict (title/url/source/text)."""
+    return {"title": title, "text": text, "url": url, "source": source}
+
+
+def _no_links(msg):
+    return "http://" not in msg and "https://" not in msg and "http" not in msg
+
+
+def test_status_report_has_header_lists_available_in_input_order_no_links():
+    items = [
+        _merch("Riftbound Newest Poster", text="available",
+               url="https://merch.riotgames.com/products/newest"),
+        _merch("Riftbound Older Deck Box", text="in stock",
+               url="https://merch.riotgames.com/products/older"),
+        _merch("Riftbound Oldest Playmat", text="auf lager",
+               url="https://merch.riotgames.com/products/oldest"),
+    ]
+    msg = notify.format_status_report(items)
+    assert notify.STATUS_HEADER in msg
+    assert "[STATUS]" in msg
+    assert _AVAIL_HEADER in msg
+    # Numbered top-to-bottom in INPUT ORDER (source is date-desc, newest first).
+    assert "1. Riftbound Newest Poster" in msg
+    assert "2. Riftbound Older Deck Box" in msg
+    assert "3. Riftbound Oldest Playmat" in msg
+    assert msg.index("1. Riftbound Newest Poster") < msg.index("2. Riftbound Older Deck Box")
+    assert msg.index("2. Riftbound Older Deck Box") < msg.index("3. Riftbound Oldest Playmat")
+    # NO links, even though every item carries a product URL in its url field.
+    assert _no_links(msg)
+
+
+def test_status_report_available_only_excludes_sold_out_and_unknown():
+    items = [
+        _merch("Riftbound Available Mug", text="available"),
+        _merch("Riftbound Sold Out Hoodie", text="sold out"),
+        _merch("Riftbound Mystery Item", text=""),  # unknown
+    ]
+    msg = notify.format_status_report(items)
+    assert "Riftbound Available Mug" in msg
+    # The sold-out and unknown items must NOT appear in the available list.
+    assert "Riftbound Sold Out Hoodie" not in msg
+    assert "Riftbound Mystery Item" not in msg
+
+
+def test_status_report_preorder_items_in_separate_section_not_available_list():
+    items = [
+        _merch("Riftbound Available Cap", text="available"),
+        _merch("Riftbound Preorder Statue", text="preorder"),
+    ]
+    msg = notify.format_status_report(items)
+    assert _AVAIL_HEADER in msg
+    assert _PREORDER_HEADER in msg
+    # The preorder item is listed under the preorder section, AFTER the available
+    # header, and is not part of the available list.
+    assert "Riftbound Preorder Statue" in msg
+    assert msg.index(_AVAIL_HEADER) < msg.index(_PREORDER_HEADER)
+    assert msg.index("Riftbound Available Cap") < msg.index(_PREORDER_HEADER)
+    assert msg.index("Riftbound Preorder Statue") > msg.index(_PREORDER_HEADER)
+    assert _no_links(msg)
+
+
+def test_status_report_no_available_items_reports_static_line_no_crash_no_links():
+    items = [
+        _merch("Riftbound Sold Out Tee", text="sold out"),
+        _merch("Riftbound Coming Soon Box", text="coming soon"),
+    ]
+    msg = notify.format_status_report(items)
+    assert _NO_AVAIL_LINE in msg
+    assert _AVAIL_HEADER not in msg
+    assert notify.STATUS_HEADER in msg
+    assert _no_links(msg)
+
+
+def test_status_report_no_available_items_at_all_empty_list():
+    msg = notify.format_status_report([])
+    assert _NO_AVAIL_LINE in msg
+    assert notify.STATUS_HEADER in msg
+    assert _no_links(msg)
+
+
+def test_status_report_no_t1_items_uses_exact_no_hits_line():
+    items = [
+        _merch("Riftbound Generic Poster", text="available"),
+        _merch("Riftbound Enamel Pin", text="in stock"),
+    ]
+    msg = notify.format_status_report(items)
+    assert _NO_T1_LINE in msg
+    # These available items are still listed.
+    assert "Riftbound Generic Poster" in msg
+    assert "Riftbound Enamel Pin" in msg
+
+
+def test_status_report_t1_signature_edition_reports_count():
+    items = [
+        _merch("T1 Signature Edition", text="available"),
+        _merch("Riftbound Generic Poster", text="in stock"),
+    ]
+    msg = notify.format_status_report(items)
+    assert _NO_T1_LINE not in msg
+    # Status line mentions items available with the highlight count.
+    assert "items available: 1" in msg
+    assert "Worlds Champion Collection items available" in msg
+
+
+def test_status_report_max_items_caps_available_list_and_stays_under_limit():
+    items = [_merch("Riftbound Item %02d" % i, text="available") for i in range(20)]
+    msg = notify.format_status_report(items, max_items=5)
+    # Exactly 5 numbered available lines, then a "...and 15 more" summary.
+    assert "1. Riftbound Item 00" in msg
+    assert "5. Riftbound Item 04" in msg
+    assert "6. Riftbound Item 05" not in msg
+    assert "...and 15 more available item(s)." in msg
+    assert len(msg) <= 2000
+
+
+def test_status_report_dedupes_by_title_case_insensitive_preserving_order():
+    items = [
+        _merch("Riftbound Deck Box", text="available"),
+        _merch("RIFTBOUND DECK BOX", text="available"),  # dup of #1 (case-insensitive)
+        _merch("Riftbound Playmat", text="available"),
+        _merch("", text="available"),  # empty title skipped
+    ]
+    msg = notify.format_status_report(items)
+    assert "1. Riftbound Deck Box" in msg
+    assert "2. Riftbound Playmat" in msg
+    assert "3." not in msg  # only two distinct, non-empty titles survive
+
+
+def test_status_report_sanitizes_url_in_title_no_http_leaks():
+    items = [
+        _merch("Riftbound Poster https://merch.riotgames.com/products/x see link",
+               text="available",
+               url="https://merch.riotgames.com/products/x"),
+    ]
+    msg = notify.format_status_report(items)
+    assert "Riftbound Poster" in msg
+    assert "http" not in msg  # the URL embedded in the title is stripped out
+    assert _no_links(msg)
+
+
+def test_status_report_preorder_section_absent_when_no_preorders():
+    items = [_merch("Riftbound Available Thing", text="available")]
+    msg = notify.format_status_report(items)
+    assert _PREORDER_HEADER not in msg
+
+
+def test_status_report_t1_whole_word_only_not_substring():
+    # "t1" as a whole word triggers the highlight; a substring like "att1c" does not.
+    hit = notify.format_status_report([_merch("Riftbound T1 Jersey", text="available")])
+    assert _NO_T1_LINE not in hit
+    miss = notify.format_status_report([_merch("Riftbound Battle Poster", text="available")])
+    assert _NO_T1_LINE in miss

@@ -9,6 +9,7 @@ generic reason, and anything we log is passed through :func:`redact_secrets`
 first (we prefer not to log the URL at all).
 """
 import logging
+import re
 from urllib.parse import urljoin, urlparse
 
 logger = logging.getLogger("riot.notify")
@@ -18,6 +19,9 @@ MAX_CONTENT = 2000
 
 # Leading line for every notification message.
 MESSAGE_HEADER = "New Riftbound × T1 match found:"
+
+# Leading line for the periodic status / heartbeat report.
+STATUS_HEADER = "[STATUS] Riftbound merch check"
 
 # Path fragments that mark a more specific product / store / collection link.
 _STORE_PATH_HINTS = (
@@ -367,6 +371,117 @@ def format_message(item, reasons=None):
     msg = "\n".join(lines)
     if len(msg) > MAX_CONTENT:  # final safety net
         msg = msg[:MAX_CONTENT]
+    return msg
+
+
+# --- format_status_report helpers (pure/offline; NEVER emit a URL) ---
+# Any http/https URL substring — stripped from titles so no link ever leaks.
+_URL_IN_TEXT_RE = re.compile(r"https?://\S+")
+# "t1" as a whole word (so "battle"/"attic" do NOT count as a T1 highlight).
+_T1_WORD_RE = re.compile(r"\bt1\b")
+# Phrases that mark an available item as a Riftbound × T1 / Worlds highlight.
+_T1_HIGHLIGHT_KEYWORDS = (
+    "worlds champion collection",
+    "signature edition",
+    "player bundle",
+    "faker",
+    "galio",
+)
+
+
+def _clean_title(title):
+    """Sanitize a title for the status report: drop any embedded ``http(s)://``
+    URL substring and collapse all runs of whitespace to single spaces. Pure —
+    guarantees the returned string contains no link. Never network."""
+    cleaned = _URL_IN_TEXT_RE.sub("", str(title or ""))
+    return " ".join(cleaned.split())
+
+
+def _is_t1_highlight(item):
+    """True if ``item`` (assumed already available) is a Riftbound × T1 / Worlds
+    Champion Collection highlight — its lowercased title+text contains one of the
+    highlight keywords or the whole word ``t1``. Pure/offline."""
+    item = item or {}
+    combined = (
+        str(item.get("title", "") or "") + " " + str(item.get("text", "") or "")
+    ).lower()
+    if any(kw in combined for kw in _T1_HIGHLIGHT_KEYWORDS):
+        return True
+    return bool(_T1_WORD_RE.search(combined))
+
+
+def _numbered_section(items, max_items, noun):
+    """Return the numbered lines for one section (available/preorder), capped at
+    ``max_items`` with a ``"...and N more <noun> item(s)."`` tail when truncated.
+    Titles are run through :func:`_clean_title` so no URL can leak."""
+    lines = []
+    shown = items[:max_items]
+    for i, it in enumerate(shown, 1):
+        lines.append("%d. %s" % (i, _clean_title((it or {}).get("title", ""))))
+    extra = len(items) - len(shown)
+    if extra > 0:
+        lines.append("...and %d more %s item(s)." % (extra, noun))
+    return lines
+
+
+def format_status_report(items, *, max_items=15):
+    """Build a periodic heartbeat message listing currently AVAILABLE Riftbound
+    merch items, WITHOUT any links. Pure/offline — the caller passes items that
+    are already relevant shop/merch items ({title,url,source,text}); this splits
+    them by :func:`availability_status` and formats. NEVER emits a URL.
+
+    Items are deduped by title (case-insensitive) preserving input order (the
+    source is date-desc sorted, so the newest item stays on top); empty titles
+    are skipped. Available and preorder items are listed in separate numbered
+    sections (each capped at ``max_items``). The status line highlights any
+    available Riftbound × T1 / Worlds Champion Collection items. The whole
+    message is sanitized (no ``http(s)://``) and truncated to ``MAX_CONTENT``.
+    """
+    seen = set()
+    deduped = []
+    for it in items or []:
+        it = it or {}
+        title = str(it.get("title", "") or "").strip()
+        if not title:
+            continue
+        key = title.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(it)
+
+    available = [it for it in deduped if availability_status(it) == "available"]
+    preorder = [it for it in deduped if availability_status(it) == "preorder"]
+    t1_hits = [it for it in available if _is_t1_highlight(it)]
+
+    lines = [STATUS_HEADER]
+    if t1_hits:
+        lines.append(
+            "Riftbound × T1 / Worlds Champion Collection items available: %d"
+            % len(t1_hits)
+        )
+    else:
+        lines.append("No new Riftbound × T1 / Worlds Champion Collection hits found.")
+    lines.append("")
+
+    if available:
+        lines.append("Available Riftbound merch items:")
+        lines.extend(_numbered_section(available, max_items, "available"))
+    else:
+        lines.append(
+            "No available Riftbound merch items detected in the static product data."
+        )
+
+    if preorder:
+        lines.append("")
+        lines.append("Preorder Riftbound merch items:")
+        lines.extend(_numbered_section(preorder, max_items, "preorder"))
+
+    msg = "\n".join(lines)
+    if len(msg) > MAX_CONTENT:
+        # Titles are already link-free, so a mid-string cut can never expose a
+        # stray URL. End with a single-character ellipsis, staying <= MAX_CONTENT.
+        msg = msg[: MAX_CONTENT - 1].rstrip() + "…"
     return msg
 
 

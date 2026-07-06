@@ -46,6 +46,7 @@ STATE_PATH = state_mod.DEFAULT_STATE_PATH
 MODE_NORMAL = "normal"
 MODE_DRY_RUN = "dry-run"
 MODE_TEST_WEBHOOK = "test-webhook-random-riftbound"
+MODE_STATUS = "status-report"
 
 
 def _new_summary(mode: str) -> dict:
@@ -78,10 +79,10 @@ def run(
 
     The summary contains: mode, checked, relevant, new, posted, state_written.
     """
-    if mode not in (MODE_NORMAL, MODE_DRY_RUN, MODE_TEST_WEBHOOK):
+    if mode not in (MODE_NORMAL, MODE_DRY_RUN, MODE_TEST_WEBHOOK, MODE_STATUS):
         raise ValueError(
             "Unknown mode %r; expected one of %r"
-            % (mode, (MODE_NORMAL, MODE_DRY_RUN, MODE_TEST_WEBHOOK))
+            % (mode, (MODE_NORMAL, MODE_DRY_RUN, MODE_TEST_WEBHOOK, MODE_STATUS))
         )
 
     fetch_fn = fetch_fn or fetch.fetch_targets
@@ -105,9 +106,32 @@ def run(
 
     if mode == MODE_TEST_WEBHOOK:
         return _run_test_webhook(summary, candidates, webhook_url, send_fn, rng)
+    if mode == MODE_STATUS:
+        return _run_status_report(summary, relevant, webhook_url, send_fn)
     if mode == MODE_DRY_RUN:
         return _run_dry_run(summary, relevant, state_path)
     return _run_normal(summary, relevant, state_path, webhook_url, send_fn)
+
+
+def _run_status_report(summary, relevant, webhook_url, send_fn) -> dict:
+    """Post a heartbeat status message listing the currently AVAILABLE Riftbound
+    merch items (no links). Deliberately posts every run; never reads or writes
+    state, never writes a baseline, never runs duplicate/new-hit logic.
+    """
+    content = notify.format_status_report(relevant)
+    if not webhook_url:
+        logger.error(
+            "DISCORD_WEBHOOK_URL is not set; cannot send the status report. "
+            "State unchanged."
+        )
+        return summary
+    send_fn(webhook_url, content)
+    summary["posted"] = 1
+    logger.info(
+        "Sent status report over %d relevant merch item(s). State unchanged.",
+        summary["relevant"],
+    )
+    return summary
 
 
 # Honest per-availability-status prefix for the test message. It never falsely
@@ -264,6 +288,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         dest="test_webhook_random_riftbound",
         help="Send exactly one test message for a random Riftbound hit; never touch state.json.",
     )
+    group.add_argument(
+        "--status-report",
+        action="store_true",
+        dest="status_report",
+        help="Post a heartbeat status message listing available Riftbound merch "
+        "items (no links); never touch state.json.",
+    )
     parser.add_argument(
         "--state-path",
         dest="state_path",
@@ -286,6 +317,8 @@ def main(argv=None) -> int:
         mode = MODE_DRY_RUN
     elif args.test_webhook_random_riftbound:
         mode = MODE_TEST_WEBHOOK
+    elif args.status_report:
+        mode = MODE_STATUS
     else:
         mode = MODE_NORMAL
 
@@ -294,7 +327,7 @@ def main(argv=None) -> int:
     # treated as "not configured" so the watcher never tries to send with it.
     raw = config.resolve_webhook_url()
     webhook_url = None if config.is_placeholder_webhook(raw) else raw
-    if mode in (MODE_NORMAL, MODE_TEST_WEBHOOK) and not webhook_url:
+    if mode in (MODE_NORMAL, MODE_TEST_WEBHOOK, MODE_STATUS) and not webhook_url:
         # Never echo any value; only note whether it is absent or a placeholder.
         if raw:
             logger.warning(

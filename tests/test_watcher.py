@@ -797,3 +797,58 @@ def test_test_webhook_sends_product_extracted_from_embedded_json(tmp_path):
     assert "https://merch.riotgames.com/de-de/product/riftbound-unleashed-vault" in content
     assert summary["posted"] == 1
     assert not os.path.exists(sp)
+
+
+# --- Status report (heartbeat) mode -----------------------------------------
+
+GENERIC_AVAILABLE_MERCH = {
+    "title": "Riftbound Unleashed Vault",
+    "url": "https://merch.riotgames.com/de-de/product/riftbound-unleashed-vault",
+    "source": "https://merch.riotgames.com/de-de/category/riftbound/",
+    "text": "available Riftbound",
+}
+
+
+def test_status_report_sends_one_message_without_links_and_no_state(tmp_path):
+    sp = _state_path(tmp_path)
+    send = Recorder()
+    summary = watcher.run(
+        "status-report", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory([GENERIC_AVAILABLE_MERCH]), send_fn=send,
+    )
+    assert len(send.calls) == 1
+    content = send.calls[0][1]
+    assert "[STATUS]" in content
+    assert "http://" not in content and "https://" not in content   # NO links
+    assert "Riftbound Unleashed Vault" in content                    # available item
+    assert "No new Riftbound" in content                             # non-T1 status line
+    assert summary["posted"] == 1
+    assert not os.path.exists(sp)                                     # never writes state
+
+
+def test_status_report_lists_only_available_items(tmp_path):
+    sp = _state_path(tmp_path)
+    send = Recorder()
+    watcher.run(
+        "status-report", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory([GENERIC_AVAILABLE_MERCH, SOLDOUT_MERCH, UNKNOWN_MERCH]),
+        send_fn=send,
+    )
+    content = send.calls[0][1]
+    assert "Available Riftbound merch items:" in content
+    after = content.split("Available Riftbound merch items:")[1]
+    assert "Riftbound Unleashed Vault" in after           # available listed
+    assert "Deck Box" not in after                        # unknown NOT in available list
+    assert "Worlds Champion Collection" not in after      # sold-out NOT in available list
+
+
+def test_status_report_without_webhook_aborts_cleanly(tmp_path):
+    sp = _state_path(tmp_path)
+    send = Recorder()
+    summary = watcher.run(
+        "status-report", state_path=sp, webhook_url=None,
+        fetch_fn=fetch_fn_factory([GENERIC_AVAILABLE_MERCH]), send_fn=send,
+    )
+    assert send.calls == []
+    assert summary["posted"] == 0
+    assert not os.path.exists(sp)

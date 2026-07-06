@@ -105,10 +105,10 @@ def test_readme_documents_markdown_local_policy():
 
 def test_readme_documents_github_actions_interval():
     low = _readme().lower()
-    # GitHub Actions runs on an interval, not continuously.
+    # GitHub Actions runs on an interval (now every 30 minutes), not continuously.
     assert "interval" in low
     assert "continuous" in low          # "does not continuously ..."
-    assert "every" in low and "2 hours" in low
+    assert "30 minutes" in low          # scheduled status-report cadence
 
 
 def test_readme_documents_test_webhook_availability_preference():
@@ -122,3 +122,12 @@ def test_readme_documents_embedded_product_discovery():
     low = _readme().lower()
     assert "embedded product data" in low
     assert "/de-de/product/" in low   # the product URL pattern is documented
+
+
+def test_readme_documents_status_report_mode():
+    text = _readme()
+    low = text.lower()
+    assert "--status-report" in text
+    assert "status report" in low
+    assert "no links" in low
+    assert "every 30 minutes" in low   # the scheduled heartbeat cadence

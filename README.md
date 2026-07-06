@@ -187,6 +187,21 @@ python watcher.py
 - `state.json` is only ever modified in this mode.
 - Optional: `--state-path PATH` points at an alternative state file.
 
+### Status report
+
+```bash
+python watcher.py --status-report
+```
+
+- Posts a heartbeat **status report** to Discord **even when there is nothing
+  new** — it is not gated on new hits.
+- Lists the currently **available** Riot merch Riftbound items (newest first) and
+  clearly states whether there were any T1 / Worlds Champion Collection hits.
+- Contains **no links** — the status report has **no links** at all (no product
+  URLs), so it is purely a summary you read.
+- Never changes `state.json` and never writes a baseline.
+- If no webhook is configured it aborts cleanly (no crash, no send).
+
 ## Upload to GitHub (you run all Git yourself)
 
 Git is done **only by you** — no automation runs Git. `.env` and `state.json` are
@@ -220,23 +235,30 @@ gh repo create riot --private --source . --remote origin --push
 
 ## Run on GitHub Actions (no laptop needed)
 
-GitHub Actions does not continuously or live-check the pages — it runs the watcher
-on a schedule (interval), currently roughly every ~2 hours (cron `0 */2 * * *`).
-Once the workflow is enabled and the `DISCORD_WEBHOOK_URL` repository Secret is
-set, **your laptop does not need to stay on** — GitHub Actions runs the watcher
-for you. Beyond the schedule you can additionally trigger it manually:
-**Actions → Riftbound Watch → Run workflow**, choosing `dry-run`, `test-webhook`,
-or `watch`.
+GitHub Actions does not continuously or live-check the pages — it runs on a
+schedule (interval), now **every 30 minutes**, and on that schedule it posts the
+**status report** (the available-items heartbeat, no links), not the watch. The
+schedule is still an **interval**, not continuously live monitoring. Once the
+workflow is enabled and the `DISCORD_WEBHOOK_URL` repository Secret is set, **your
+laptop does not need to stay on** — GitHub Actions runs it for you. Beyond the
+schedule you can additionally trigger it manually: **Actions → Riftbound Watch →
+Run workflow**, choosing `dry-run`, `test-webhook`, `watch`, or `status-report`.
 
 - Workflow: **Riftbound Watch** (`.github/workflows/riftbound-watch.yml`).
-- `schedule`: a gentle cron `0 */2 * * *` (every ~2 hours, never sub-hourly). It
-  is an **interval**, not continuously live monitoring.
+- `schedule`: now runs **every 30 minutes** and posts the **status report** (the
+  available-items list, no links). It is still an **interval**, not continuously
+  live monitoring.
 - `workflow_dispatch`: manual runs with a `mode` input — `dry-run`,
-  `test-webhook`, or `watch` (default the safe `dry-run`).
-- Mode behavior: `dry-run` never sends; `test-webhook` sends exactly one test
-  message when a shop/merch candidate is found; `watch` writes a baseline on the
-  first run (no message) and later posts only new relevant shop/merch hits (no
-  duplicate spam).
+  `test-webhook`, `watch`, or `status-report`. The `watch` mode (posts only NEW
+  relevant hits, each with a clickable product link) stays available via manual
+  **Run workflow**, or by adding your own separate schedule; it uses the state
+  **cache** for duplicate protection.
+- Mode behavior: `dry-run` never sends; `test-webhook` sends exactly one real
+  product with a clickable link when a shop/merch candidate is found; `watch`
+  writes a baseline on the first run (no message) and later posts only new
+  relevant shop/merch hits, each with a clickable link (no duplicate spam);
+  `status-report` posts the available-items list **without links** even when there
+  is nothing new. The bot never buys anything.
 - The webhook comes **only** from the GitHub repository **Secret**
   `DISCORD_WEBHOOK_URL` — never from `.env` on the runner (local runs still use
   `.env`). No secret value ever appears in the YAML.

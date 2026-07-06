@@ -11,9 +11,10 @@ on:
           - dry-run
           - test-webhook
           - watch
+          - status-report
   schedule:
-    # Gentle: every 2 hours at minute 0. Never sub-hourly.
-    - cron: "0 */2 * * *"
+    # Every 30 minutes: post a status report. Never more frequent than this.
+    - cron: "*/30 * * * *"
 
 permissions:
   contents: read
@@ -26,8 +27,8 @@ jobs:
   watch:
     runs-on: ubuntu-latest
     env:
-      # On the schedule there is no input, so default to the safe normal watch mode.
-      MODE: ${{ github.event.inputs.mode || 'watch' }}
+      # On the schedule there is no input, so default to the notify-only status report.
+      MODE: ${{ github.event.inputs.mode || 'status-report' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -50,9 +51,10 @@ jobs:
           set -euo pipefail
           echo "Running watcher in mode: ${MODE}"
           case "${MODE}" in
-            dry-run)      python watcher.py --dry-run ;;
-            test-webhook) python watcher.py --test-webhook-random-riftbound ;;
-            watch)        python watcher.py ;;
+            dry-run)       python watcher.py --dry-run ;;
+            test-webhook)  python watcher.py --test-webhook-random-riftbound ;;
+            watch)         python watcher.py ;;
+            status-report) python watcher.py --status-report ;;
             *) echo "Unknown mode: ${MODE}" >&2; exit 1 ;;
           esac
       - name: Save watcher state
