@@ -771,3 +771,29 @@ def test_test_webhook_only_articles_aborts_cleanly_with_log(tmp_path, caplog):
     assert summary["posted"] == 0
     assert not os.path.exists(sp)
     assert "no riftbound shop/product link" in caplog.text.lower()
+
+
+def test_test_webhook_sends_product_extracted_from_embedded_json(tmp_path):
+    # End-to-end: real HTML with embedded product JSON -> fetch.extract_items ->
+    # watcher picks a shop product and sends exactly one message with its link.
+    import json
+    product = {
+        "id": "1", "title": "Riftbound Unleashed Vault", "sku": "1",
+        "slug": "riftbound-unleashed-vault",
+        "ip": {"label": "Riftbound", "slug": "riftbound"},
+        "contentType": "product", "availability": "available",
+    }
+    blob = json.dumps([product], separators=(",", ":")).replace('"', '\\"')
+    html = '<html><body><script>self.__next_f.push([1,"' + blob + '"])</script></body></html>'
+    src = "https://merch.riotgames.com/de-de/category/riftbound/"
+    sp = _state_path(tmp_path)
+    send = Recorder()
+    summary = watcher.run(
+        "test-webhook-random-riftbound", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=lambda t=None: fetch.extract_items(src, html), send_fn=send,
+    )
+    assert len(send.calls) == 1
+    content = send.calls[0][1]
+    assert "https://merch.riotgames.com/de-de/product/riftbound-unleashed-vault" in content
+    assert summary["posted"] == 1
+    assert not os.path.exists(sp)

@@ -3,9 +3,11 @@
 No real network access anywhere: every test injects a fake session or
 monkeypatches module functions.
 """
+import json
 import sys
 
 import fetch
+import notify
 
 
 # ---------------------------------------------------------------------------
@@ -218,3 +220,102 @@ def test_fetch_page_closes_session_it_created(monkeypatch):
     assert result is not None
     assert len(_FakeSession.instances) == 1
     assert _FakeSession.instances[0].closed is True
+
+
+# ---------------------------------------------------------------------------
+# extract_products_json — parse products embedded as (escaped) JSON in the page
+# ---------------------------------------------------------------------------
+def _escaped(obj):
+    """Mimic the merch store's backslash-escaped embedded JSON (" -> \\")."""
+    return json.dumps(obj, separators=(",", ":")).replace('"', '\\"')
+
+
+def _merch_category_html(locale="de-de"):
+    # Product objects keep "slug" immediately before "ip" (as the real page does),
+    # plus a nav item that must NOT be treated as a product.
+    products = [
+        {"id": "111", "title": "Riftbound Unleashed Vault", "trackingTitle": "x",
+         "sku": "111", "productType": "simple", "slug": "riftbound-unleashed-vault",
+         "ip": {"label": "Riftbound", "slug": "riftbound"},
+         "assets": [{"src": "https://cdn/x.png"}],
+         "price": {"amount": 49.99, "currencyCode": "EUR"},
+         "contentType": "product", "availability": "available"},
+        {"id": "222", "title": "Riftbound Worlds Bundle 2025", "sku": "222",
+         "slug": "riftbound-worlds-bundle-2025",
+         "ip": {"label": "Riftbound", "slug": "riftbound"},
+         "price": {"amount": 99.0, "currencyCode": "EUR"},
+         "contentType": "product", "availability": "preorder"},
+        {"id": "333", "title": "Riftbound Poppy Playmat", "sku": "333",
+         "slug": "riftbound-unleashed-poppy-playmat",
+         "ip": {"label": "Riftbound", "slug": "riftbound"},
+         "contentType": "product"},
+    ]
+    nav = {"_type": None, "slug": "/faqs", "title": "FAQs"}
+    blob = _escaped(products) + _escaped(nav)
+    return (
+        "<html><head><title>Riftbound | Riot Games Store</title></head><body>"
+        '<a href="/%s/faqs/">FAQs</a>' % locale
+        + '<script>self.__next_f.push([1,"' + blob + '"])</script>'
+        + "</body></html>"
+    )
+
+
+CATEGORY_SRC = "https://merch.riotgames.com/de-de/category/riftbound/"
+
+
+def test_extract_products_json_finds_embedded_products():
+    prods = fetch.extract_products_json(CATEGORY_SRC, _merch_category_html())
+    assert len(prods) == 3
+    by_url = {p["url"]: p for p in prods}
+    vault = "https://merch.riotgames.com/de-de/product/riftbound-unleashed-vault"
+    assert vault in by_url
+    p = by_url[vault]
+    assert p["title"] == "Riftbound Unleashed Vault"
+    assert p["source"] == CATEGORY_SRC
+    assert set(p.keys()) == {"title", "url", "source", "text"}
+    assert all(isinstance(p[k], str) for k in p)
+
+
+def test_extract_products_json_availability_detected():
+    prods = {p["url"].rsplit("/", 1)[-1]: p for p in
+             fetch.extract_products_json(CATEGORY_SRC, _merch_category_html())}
+    assert notify.availability_status(prods["riftbound-unleashed-vault"]) == "available"
+    assert notify.availability_status(prods["riftbound-worlds-bundle-2025"]) == "preorder"
+    # No availability field -> honest unknown (still carries the IP label).
+    assert notify.availability_status(prods["riftbound-unleashed-poppy-playmat"]) == "unknown"
+
+
+def test_extract_products_json_ignores_nav_and_uses_locale():
+    prods = fetch.extract_products_json(
+        "https://merch.riotgames.com/en-us/category/riftbound/",
+        _merch_category_html(locale="en-us"),
+    )
+    urls = [p["url"] for p in prods]
+    assert all("/faqs" not in u for u in urls)          # nav item excluded
+    assert all("/en-us/product/" in u for u in urls)    # locale from source
+
+
+def test_extract_products_json_empty_and_garbage():
+    assert fetch.extract_products_json(CATEGORY_SRC, "") == []
+    assert fetch.extract_products_json(CATEGORY_SRC, "<html>no product data here</html>") == []
+    # Malformed embedded data must not crash.
+    assert isinstance(fetch.extract_products_json(CATEGORY_SRC, '<script>\\"slug\\":\\"'), list)
+
+
+def test_extract_items_includes_embedded_products():
+    items = fetch.extract_items(CATEGORY_SRC, _merch_category_html())
+    urls = [it["url"] for it in items]
+    assert "https://merch.riotgames.com/de-de/product/riftbound-unleashed-vault" in urls
+    assert "https://merch.riotgames.com/de-de/faqs/" in urls   # the plain anchor too
+    # No duplicates by URL.
+    assert len(urls) == len(set(urls))
+
+
+def test_extracted_products_pass_downstream_filters():
+    import relevance
+    prods = fetch.extract_products_json(CATEGORY_SRC, _merch_category_html())
+    for p in prods:
+        assert relevance.is_relevant(p) is True
+        assert relevance.is_riftbound(p) is True
+        assert notify.is_shop_candidate(p) is True
+        assert notify.best_item_url(p)

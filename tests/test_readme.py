@@ -116,3 +116,9 @@ def test_readme_documents_test_webhook_availability_preference():
     assert "pre-order" in low
     assert "available" in low
     assert "availability is not confirmed" in low   # honest unknown fallback
+
+
+def test_readme_documents_embedded_product_discovery():
+    low = _readme().lower()
+    assert "embedded product data" in low
+    assert "/de-de/product/" in low   # the product URL pattern is documented

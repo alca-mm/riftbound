@@ -10,11 +10,30 @@ A "candidate item" is a dict with EXACTLY these four string keys:
 """
 from __future__ import annotations
 
+import json
 import logging
+import re
 from html.parser import HTMLParser
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 logger = logging.getLogger("riot.fetch")
+
+# The Riot merch store host and its product URL pattern
+# (https://merch.riotgames.com/<locale>/product/<slug>).
+MERCH_HOST = "merch.riotgames.com"
+
+# The Riot merch store renders its product grid client-side but embeds the
+# product data in the initial HTML as backslash-escaped JSON (Next.js streamed
+# data). Each product object contains a `"title"` shortly before a
+# `"slug":"<slug>","ip":{"label":"..."` marker, plus a `"contentType":"product"`
+# and an `"availability"` field. We parse that embedded product data — no browser,
+# no login, no API calls, no extra requests: it is already in the page we GET.
+_PRODUCT_ANCHOR_RE = re.compile(r'"slug":"([a-z0-9][a-z0-9-]{2,80})","ip":\{"label":"([^"]*)"')
+_TITLE_RE = re.compile(r'"title":"((?:\\.|[^"\\])*)"')
+_AVAIL_RE = re.compile(
+    r'"availability":\s*("(?:[^"\\]|\\.)*"|true|false|null|\{[^{}]*\}|\[[^\]]*\]|[a-zA-Z0-9_]+)'
+)
+_LOCALE_RE = re.compile(r"^[a-z]{2}-[a-z]{2}$")
 
 # Honest User-Agent identifying this as a notify-only watcher.
 USER_AGENT = "riot-watcher/0.1 (+notify-only; no automated purchase)"
@@ -106,7 +125,105 @@ def extract_items(source_url: str, html: str) -> list[dict]:
                 "text": title,
             }
         )
+
+    # Also parse products embedded as JSON in the page (the merch store renders
+    # its grid client-side but ships the product data in the initial HTML).
+    seen_urls = {it["url"] for it in items}
+    for product in extract_products_json(source_url, html):
+        if product["url"] not in seen_urls:
+            items.append(product)
+            seen_urls.add(product["url"])
     return items
+
+
+def _locale_from_source(source_url: str) -> str:
+    """Return the locale segment (e.g. 'de-de') from a merch URL; default 'de-de'."""
+    try:
+        for part in urlparse(source_url).path.split("/"):
+            if _LOCALE_RE.match(part):
+                return part
+    except Exception:
+        pass
+    return "de-de"
+
+
+def _availability_text(raw_value: str) -> str:
+    """Map a product's embedded availability value to a phrase the availability
+    detector understands ('sold out' / 'pre-order' / 'available' / 'coming soon'),
+    or '' when unknown. Best-effort and honest — never invents availability.
+    """
+    v = (raw_value or "").lower()
+    if any(k in v for k in ("sold", "out_of", "out-of", "outofstock", "unavail", "not_avail", "notavail", "ausverkauft")):
+        return "sold out"
+    if "preorder" in v or "vorbestell" in v or ("pre" in v and "order" in v):
+        return "pre-order"
+    if any(k in v for k in ("in_stock", "instock", "in stock", "available", "auf lager", "lieferbar", "verfugbar", "verfügbar")):
+        return "available"
+    if "coming" in v or "soon" in v:
+        return "coming soon"
+    return ""
+
+
+def extract_products_json(source_url: str, html: str) -> list[dict]:
+    """Extract Riot merch product items from product data embedded in the page.
+
+    The merch store renders products client-side but embeds the product data as
+    backslash-escaped JSON in the initial HTML. We reverse one level of escaping
+    and pull each product's title, slug (built into a product URL) and
+    availability. Returns candidate item dicts {title, url, source, text}.
+    Pure/offline; never raises and never makes a request.
+    """
+    if not html:
+        return []
+    try:
+        # Reverse one level of JSON-string escaping used by the streamed data.
+        un = html.replace('\\"', '"').replace('\\/', '/')
+        locale = _locale_from_source(source_url)
+        base = "https://%s/%s/product/" % (MERCH_HOST, locale)
+        items: list[dict] = []
+        seen: set[str] = set()
+        anchors = list(_PRODUCT_ANCHOR_RE.finditer(un))
+        for idx, m in enumerate(anchors):
+            slug = m.group(1)
+            ip_label = (m.group(2) or "").strip()
+            if slug in seen:
+                continue
+            seen.add(slug)
+            # Title: the nearest preceding "title":"..." (the product title sits
+            # just before the slug marker; "trackingTitle" does not match).
+            before = un[max(0, m.start() - 600):m.start()]
+            titles = _TITLE_RE.findall(before)
+            raw_title = titles[-1] if titles else slug
+            try:
+                title = json.loads('"' + raw_title + '"')
+            except Exception:
+                title = raw_title
+            # Availability: search only within this product's object (bounded by
+            # the next product marker). Honest 'unknown' when absent.
+            end = anchors[idx + 1].start() if idx + 1 < len(anchors) else min(len(un), m.end() + 2500)
+            after = un[m.end():end]
+            av = _AVAIL_RE.search(after)
+            # Include the availability phrase AND the product's IP label (e.g.
+            # "Riftbound") in the item text, so relevance stays correct even if a
+            # slug/title omits the token (relevance ignores `source`).
+            text = " ".join(
+                t for t in (_availability_text(av.group(1) if av else ""), ip_label) if t
+            ).strip()
+            items.append(
+                {
+                    "title": (title or slug).strip() or slug,
+                    "url": base + slug,
+                    "source": source_url,
+                    "text": text,
+                }
+            )
+        return items
+    except Exception as exc:  # never let a parser hiccup crash the watcher
+        logger.warning(
+            "failed to parse embedded product JSON from %s: %s",
+            source_url, type(exc).__name__,
+        )
+        return []
 
 
 def fetch_page(url: str, *, session=None, timeout: int = DEFAULT_TIMEOUT) -> str | None:

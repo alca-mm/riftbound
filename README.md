@@ -36,6 +36,20 @@ link is available, a relevant article / news / drawing / source link is used
 instead. The bot does **not** open or buy anything automatically — you click the
 link yourself.
 
+## How products are discovered
+
+The Riot merch Riftbound category page loads its products client-side, but the
+initial HTML **embeds the product data as JSON**, and the watcher parses that
+**embedded product data** to find the real Riot merch Riftbound **products**
+(product name, product URL like `https://merch.riotgames.com/de-de/product/<slug>`,
+and availability when present). It also still reads visible product / shop links
+from the page. It never uses a browser, never logs in, never buys — it only reads
+public page data (the **embedded product data** JSON) and notifies. If no product
+data is found in the HTML, the watcher finds nothing; you can set `WATCH_TARGETS`
+to concrete product / collection URLs (for example a specific
+`https://merch.riotgames.com/de-de/product/<slug>`) so the watcher and the
+test-webhook have something to send.
+
 ## Security boundaries (what this bot does NOT do)
 
 This project is deliberately limited. It **only notifies**. It does **not**, and
@@ -143,6 +157,11 @@ python watcher.py --test-webhook-random-riftbound
   Riftbound **shop / merch item**, containing a **clickable link**. It now prefers
   an **available** or **pre-order** item, using availability signals like
   "available" / "in stock" / "lieferbar" / "pre-order" / "vorbestellbar".
+- When real Riot merch Riftbound products are found in the page's **embedded
+  product data**, `--test-webhook-random-riftbound` sends exactly one of them (a
+  real product with a clickable Riot merch product link), preferring available /
+  pre-order; if none are found it sends nothing and logs how to set
+  `WATCH_TARGETS`.
 - If a shop item is found but its availability is unknown, it still sends one test
   message clearly marked that **availability is not confirmed** — it never falsely
   claims the item is available.
