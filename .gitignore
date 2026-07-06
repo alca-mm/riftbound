@@ -1,0 +1,28 @@
+# Secrets / local config
+.env
+
+# Runtime state
+state.json
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Packaging / build artifacts
+*.egg-info/
+build/
+dist/
+
+# IDE / editor
+.idea/
+
+# OS junk
+.DS_Store
