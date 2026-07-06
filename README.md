@@ -7,11 +7,16 @@ Discord webhook. This README is the single source of truth — everything you ne
 to install it, use Discord, upload it to GitHub, and run it on GitHub Actions is
 here.
 
-Primary target page:
+**Primary watch focus — Riot merch shop items in the Riftbound category:**
 
 ```
-https://merch.riotgames.com/de-de/category/riftbound/?page=1&sort=dateDesc
+https://merch.riotgames.com/de-de/category/riftbound/
 ```
+
+The newest-first variant `…/riftbound/?page=1&sort=dateDesc` is also watched. The
+watcher deliberately focuses on **shop / product / merch items** here. General
+Riftbound pages — news, newsletters, "how to play" / get-started articles, top
+decks — are **not** the target and are not sent to Discord.
 
 It focuses narrowly on:
 
@@ -135,10 +140,11 @@ python watcher.py --test-webhook-random-riftbound
 ```
 
 - Sends exactly **one** Discord test message (prefixed `[TEST]`) for one random
-  Riftbound hit, containing a **clickable link**.
+  Riftbound **shop / merch item**, containing a **clickable link**.
 - Never modifies `state.json`.
-- Needs a real local `DISCORD_WEBHOOK_URL`. If no Riftbound hit is found, it
-  aborts cleanly and sends nothing.
+- Needs a real local `DISCORD_WEBHOOK_URL`. If no Riftbound **shop/merch item** is
+  found (e.g. only general articles), it aborts cleanly and sends nothing — it
+  will **not** send a get-started / how-to-play link.
 
 ### Normal watcher
 
@@ -240,11 +246,20 @@ gh workflow run riftbound-watch.yml -f mode=watch
 
 ## Configurable targets
 
-By default the watcher checks the primary merch Riftbound page (first) plus the
-merch home and the official Riftbound page. You can override the target list
-without editing code by setting the `WATCH_TARGETS` environment variable to a
-comma- or newline-separated list of URLs (GitHub Actions can set it in the
-workflow env). Unset → the merch-primary defaults are used.
+By default the watcher checks the Riot merch Riftbound category page (primary),
+its newest-first variant, and the merch home — all on `merch.riotgames.com`. It
+only notifies about **shop / merch items** (see the primary focus above). You can
+override the target list without editing code by setting the `WATCH_TARGETS`
+environment variable to a comma- or newline-separated list of URLs; the bundled
+GitHub Actions workflow sets it to the merch Riftbound category. Unset → the
+merch-primary defaults are used.
+
+## Documentation
+
+This root `README.md` is the single tracked documentation and the central GitHub
+doc. Any other local Markdown files — extra guides or local change notes under
+`docs/` — may exist on your machine but are **git-ignored** (`.gitignore` ignores
+`*.md` except the root `README.md`), so they are never published to GitHub.
 
 ## Troubleshooting
 

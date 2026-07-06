@@ -7,6 +7,7 @@ notify-only Discord watcher.
 Repo root is derived from this file's location so the tests work regardless of
 the current working directory.
 """
+import fnmatch
 import os
 import re
 
@@ -95,6 +96,47 @@ def test_gitignore_excludes_essentials():
         "env/",
     ):
         assert entry in content, f".gitignore must exclude {entry!r}"
+
+
+# ---------------------------------------------------------------------------
+# Documentation publish policy — only the root README.md is tracked; every
+# other Markdown doc is kept locally but git-ignored.
+# ---------------------------------------------------------------------------
+def _md_path_is_ignored(relpath):
+    """Emulate the two Markdown .gitignore rules for a repo-relative path.
+
+    Rule 1 ``*.md``   — ignore every Markdown file (matched on its basename, so
+                        it applies at any directory depth).
+    Rule 2 ``!/README.md`` — re-include (un-ignore) the root ``README.md`` only.
+
+    Dependency-free (fnmatch + os.path); no gitwildmatch/pathspec needed.
+    """
+    norm = relpath.replace(os.sep, "/")
+    ignored = fnmatch.fnmatch(os.path.basename(norm), "*.md")
+    if norm == "README.md":  # leading-slash anchor re-includes the root README
+        ignored = False
+    return ignored
+
+
+def test_gitignore_ignores_extra_markdown_but_keeps_root_readme():
+    lines = [
+        line.strip()
+        for line in _read(os.path.join(REPO_ROOT, ".gitignore")).splitlines()
+    ]
+    assert "*.md" in lines, ".gitignore must ignore all Markdown via '*.md'"
+    assert any(
+        neg in lines for neg in ("!/README.md", "!README.md")
+    ), ".gitignore must re-include the root README via '!/README.md'"
+
+
+def test_markdown_policy_sanity_check():
+    # Root README stays tracked; extra docs anywhere are ignored.
+    assert not _md_path_is_ignored("README.md")
+    assert _md_path_is_ignored("docs/changes/foo.md")
+    assert _md_path_is_ignored("GUIDE.md")
+    assert _md_path_is_ignored(os.path.join("docs", "notes.md"))
+    # Non-Markdown files are unaffected by this policy.
+    assert not _md_path_is_ignored("main.py")
 
 
 # ---------------------------------------------------------------------------

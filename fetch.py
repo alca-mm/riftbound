@@ -24,11 +24,12 @@ DEFAULT_TIMEOUT = 15
 
 # A small handful of PUBLIC Riot / Riftbound merch pages.
 DEFAULT_TARGETS = [
-    # PRIMARY: Riot merch store, Riftbound category, newest first.
+    # PRIMARY: Riot merch store, Riftbound category (shop items).
+    "https://merch.riotgames.com/de-de/category/riftbound/",
+    # Same category, newest-first variant.
     "https://merch.riotgames.com/de-de/category/riftbound/?page=1&sort=dateDesc",
+    # Riot merch home (still merch; filtered downstream).
     "https://merch.riotgames.com/",
-    # Secondary official Riftbound page (still strictly filtered by relevance).
-    "https://www.riftbound.com/",
 ]
 
 

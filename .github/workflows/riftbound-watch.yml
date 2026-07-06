@@ -45,6 +45,7 @@ jobs:
       - name: Run watcher
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          WATCH_TARGETS: "https://merch.riotgames.com/de-de/category/riftbound/,https://merch.riotgames.com/de-de/category/riftbound/?page=1&sort=dateDesc"
         run: |
           set -euo pipefail
           echo "Running watcher in mode: ${MODE}"

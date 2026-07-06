@@ -562,6 +562,9 @@ def test_test_webhook_skips_riftbound_without_usable_link(tmp_path):
 
 # --- Configurable watch targets (WATCH_TARGETS env / DEFAULT_TARGETS) --------
 
+# The primary merch shop target is the (non-sorted) Riftbound category page.
+MERCH_CATEGORY_URL = "https://merch.riotgames.com/de-de/category/riftbound/"
+# The newest-first sorted variant (used as a WATCH_TARGETS override in a test).
 MERCH_RIFTBOUND_URL = (
     "https://merch.riotgames.com/de-de/category/riftbound/?page=1&sort=dateDesc"
 )
@@ -574,8 +577,8 @@ def test_main_defaults_to_default_targets(monkeypatch, tmp_path):
     captured = _capture_run_webhook(monkeypatch)
     assert watcher.main(["--dry-run"]) == 0
     assert captured["targets"] == fetch.DEFAULT_TARGETS
-    # The primary target is the Riot merch Riftbound category page.
-    assert captured["targets"][0] == MERCH_RIFTBOUND_URL
+    # The primary target is the Riot merch Riftbound category page (non-sorted).
+    assert captured["targets"][0] == MERCH_CATEGORY_URL
 
 
 def test_main_uses_watch_targets_env_override(monkeypatch, tmp_path):
@@ -585,3 +588,87 @@ def test_main_uses_watch_targets_env_override(monkeypatch, tmp_path):
     captured = _capture_run_webhook(monkeypatch)
     assert watcher.main(["--dry-run"]) == 0
     assert captured["targets"] == [MERCH_RIFTBOUND_URL]
+
+
+# --- Shop/merch focus: only real Riot merch items are watched / sent ---------
+
+GET_STARTED_ITEM = {
+    "title": "HOW TO PLAY",
+    "url": "https://www.riftbound.com/en-us/get-started/",
+    "source": "https://www.riftbound.com/",
+    "text": "",
+}
+MERCH_PRODUCT_ITEM = {
+    "title": "Riftbound x T1 Worlds Champion Collection",
+    "url": "https://merch.riotgames.com/de-de/category/riftbound/riftbound-t1-wcc",
+    "source": "https://merch.riotgames.com/de-de/category/riftbound/",
+    "text": "",
+}
+
+
+def test_test_webhook_skips_get_started_article(tmp_path):
+    # A get-started / how-to-play page is a Riftbound link but NOT a shop item.
+    sp = _state_path(tmp_path)
+    send = Recorder()
+    summary = watcher.run(
+        "test-webhook-random-riftbound", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory([GET_STARTED_ITEM]), send_fn=send,
+    )
+    assert send.calls == []          # "HOW TO PLAY" must never be sent
+    assert summary["posted"] == 0
+    assert not os.path.exists(sp)
+
+
+def test_test_webhook_prefers_merch_shop_candidate(tmp_path):
+    sp = _state_path(tmp_path)
+    send = Recorder()
+    summary = watcher.run(
+        "test-webhook-random-riftbound", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory([GET_STARTED_ITEM, MERCH_PRODUCT_ITEM]), send_fn=send,
+    )
+    assert len(send.calls) == 1
+    content = send.calls[0][1]
+    assert "merch.riotgames.com" in content   # a shop/product link
+    assert "get-started" not in content       # not the general article
+    assert summary["posted"] == 1
+    assert not os.path.exists(sp)
+
+
+def test_normal_run_does_not_post_get_started_article(tmp_path):
+    sp = _state_path(tmp_path)
+    # Baseline with a merch product.
+    watcher.run(
+        "normal", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory([MERCH_PRODUCT_ITEM]), send_fn=Recorder(),
+    )
+    # Later run adds a get-started article (relevant via 'riftbound' in the url),
+    # but it is not a shop item, so nothing new should be posted.
+    send = Recorder()
+    summary = watcher.run(
+        "normal", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory([MERCH_PRODUCT_ITEM, GET_STARTED_ITEM]), send_fn=send,
+    )
+    assert send.calls == []
+    assert summary["posted"] == 0
+
+
+def test_normal_run_posts_new_merch_shop_item(tmp_path):
+    sp = _state_path(tmp_path)
+    watcher.run(
+        "normal", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory([MERCH_PRODUCT_ITEM]), send_fn=Recorder(),
+    )
+    new_product = {
+        "title": "T1 Player Bundle",
+        "url": "https://merch.riotgames.com/de-de/category/riftbound/t1-player-bundle",
+        "source": "https://merch.riotgames.com/de-de/category/riftbound/",
+        "text": "",
+    }
+    send = Recorder()
+    summary = watcher.run(
+        "normal", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory([MERCH_PRODUCT_ITEM, new_product]), send_fn=send,
+    )
+    assert len(send.calls) == 1
+    assert "t1-player-bundle" in send.calls[0][1]
+    assert summary["posted"] == 1

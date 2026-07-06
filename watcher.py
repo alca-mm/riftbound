@@ -93,8 +93,15 @@ def run(
     candidates = fetch_fn(targets) or []
     summary["checked"] = len(candidates)
     relevant = relevance.filter_relevant(candidates)
+    # Focus on shop/merch items: a relevant hit is only watched/posted when it
+    # looks like a Riot merch shop/product item, not a general article or
+    # how-to-play page. This keeps e.g. riftbound.com/get-started out of Discord.
+    relevant = [it for it in relevant if notify.is_shop_candidate(it)]
     summary["relevant"] = len(relevant)
-    logger.info("Mode=%s: checked %d item(s), %d relevant.", mode, summary["checked"], summary["relevant"])
+    logger.info(
+        "Mode=%s: checked %d item(s), %d relevant merch item(s).",
+        mode, summary["checked"], summary["relevant"],
+    )
 
     if mode == MODE_TEST_WEBHOOK:
         return _run_test_webhook(summary, candidates, webhook_url, send_fn, rng)
@@ -105,16 +112,25 @@ def run(
 
 def _run_test_webhook(summary, candidates, webhook_url, send_fn, rng) -> dict:
     """Send exactly one test message for a random Riftbound hit; never write state."""
-    # Only Riftbound hits that also yield a valid clickable link, so the single
-    # test message always contains a working link.
+    # Only Riftbound SHOP/MERCH items that also yield a valid clickable link — so
+    # the test message is a real product/store item (not a get-started/how-to-play
+    # article) and always contains a working link.
     pool = [
         it for it in candidates
-        if relevance.is_riftbound(it) and notify.best_item_url(it)
+        if relevance.is_riftbound(it)
+        and notify.is_shop_candidate(it)
+        and notify.best_item_url(it)
     ]
-    logger.info("Mode=%s: %d Riftbound hit(s) available for the test message.", MODE_TEST_WEBHOOK, len(pool))
+    logger.info(
+        "Mode=%s: %d Riftbound shop/merch candidate(s) available for the test message.",
+        MODE_TEST_WEBHOOK, len(pool),
+    )
 
     if not pool:
-        logger.info("No Riftbound hit found; sending nothing and leaving state unchanged.")
+        logger.info(
+            "No Riftbound shop/merch candidate found; sending nothing and leaving "
+            "state unchanged."
+        )
         return summary
 
     if not webhook_url:

@@ -255,6 +255,85 @@ def test_best_item_url_falls_back_to_source_when_url_invalid():
 
 
 # ---------------------------------------------------------------------------
+# is_shop_candidate — pure/offline shop-vs-article classification (NO network)
+# ---------------------------------------------------------------------------
+def test_is_shop_candidate_true_for_merch_product_url():
+    item = {
+        "title": "Some product",
+        "url": "https://merch.riotgames.com/de-de/category/riftbound/some-product",
+        "source": "https://merch.riotgames.com/de-de/category/riftbound/",
+        "text": "",
+    }
+    assert notify.is_shop_candidate(item) is True
+
+
+def test_is_shop_candidate_true_for_merch_category_url():
+    item = {
+        "title": "Riftbound",
+        "url": "https://merch.riotgames.com/de-de/category/riftbound/",
+        "source": "https://merch.riotgames.com/",
+        "text": "",
+    }
+    assert notify.is_shop_candidate(item) is True
+
+
+def test_is_shop_candidate_true_for_signature_edition_title():
+    item = {"title": "T1 Signature Edition", "url": "", "source": "", "text": ""}
+    assert notify.is_shop_candidate(item) is True
+
+
+def test_is_shop_candidate_true_for_worlds_champion_collection_title():
+    item = {"title": "Worlds Champion Collection", "url": "", "source": "", "text": ""}
+    assert notify.is_shop_candidate(item) is True
+
+
+def test_is_shop_candidate_true_for_player_bundle_title():
+    item = {"title": "T1 Player Bundle", "url": "", "source": "", "text": ""}
+    assert notify.is_shop_candidate(item) is True
+
+
+def test_is_shop_candidate_false_for_reported_how_to_play_get_started():
+    # The exact case that was wrongly notified in the live test.
+    item = {
+        "title": "HOW TO PLAY",
+        "url": "https://www.riftbound.com/en-us/get-started/",
+        "source": "https://www.riftbound.com/",
+        "text": "",
+    }
+    assert notify.is_shop_candidate(item) is False
+
+
+def test_is_shop_candidate_false_for_top_decks_article():
+    item = {
+        "title": "Top decks",
+        "url": "https://www.riftbound.com/en-us/top-decks/",
+        "source": "https://www.riftbound.com/",
+        "text": "",
+    }
+    assert notify.is_shop_candidate(item) is False
+
+
+def test_is_shop_candidate_false_for_newsletter_signup():
+    item = {
+        "title": "Newsletter sign-up",
+        "url": "https://www.riftbound.com/en-us/newsletter/",
+        "source": "https://www.riftbound.com/",
+        "text": "",
+    }
+    assert notify.is_shop_candidate(item) is False
+
+
+def test_is_shop_candidate_false_for_generic_news_article_without_shop_keyword():
+    item = {
+        "title": "Whatever happened this week",
+        "url": "https://www.riftbound.com/en-us/news/whatever",
+        "source": "https://www.riftbound.com/",
+        "text": "",
+    }
+    assert notify.is_shop_candidate(item) is False
+
+
+# ---------------------------------------------------------------------------
 # format_message — header + bare clickable link line
 # ---------------------------------------------------------------------------
 def test_format_message_contains_header_title_and_best_link():

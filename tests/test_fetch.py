@@ -158,10 +158,15 @@ def test_public_api_constants():
 
 
 def test_default_targets_primary_is_merch_riftbound_category():
-    # The Riot merch Riftbound category page (newest first) is the PRIMARY target.
+    # The Riot merch Riftbound category page is the PRIMARY target.
     assert (
         fetch.DEFAULT_TARGETS[0]
-        == "https://merch.riotgames.com/de-de/category/riftbound/?page=1&sort=dateDesc"
+        == "https://merch.riotgames.com/de-de/category/riftbound/"
+    )
+    # The newest-first sorted variant is also present among the targets.
+    assert (
+        "https://merch.riotgames.com/de-de/category/riftbound/?page=1&sort=dateDesc"
+        in fetch.DEFAULT_TARGETS
     )
 
 

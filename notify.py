@@ -50,6 +50,81 @@ _OVERVIEW_PATH_HINTS = (
 )
 
 
+# --- is_shop_candidate signals (pure/offline shop-vs-article classification) ---
+# Path fragments that mark a merch shop / product / category / collection page.
+_SHOP_PATH_SIGNALS = (
+    "/de-de/category/riftbound",
+    "/category/riftbound",
+    "/product",
+    "/products",
+    "/shop",
+    "/store",
+    "/collection",
+    "/collections",
+)
+# Keywords (anywhere in title+text+url) that mark a merch shop/product item.
+_SHOP_TEXT_SIGNALS = (
+    "merch",
+    "product",
+    "shop",
+    "store",
+    "collection",
+    "availability",
+    "drawing",
+    "lottery",
+    "player bundle",
+    "signature edition",
+    "worlds champion collection",
+)
+# Keywords that mark a general article / news / how-to-play page (negative-only).
+_ARTICLE_TEXT_SIGNALS = (
+    "get-started",
+    "how to play",
+    "top decks",
+    "top-decks",
+    "newsletter",
+    "/news",
+    "/blog",
+    "/article",
+)
+
+
+def is_shop_candidate(item) -> bool:
+    """True if the item looks like a Riot merch shop/product item, rather than a
+    general article / news / how-to-play page. Pure/offline — no network.
+
+    A positive shop signal (merch host, a shop/category/collection path, or a
+    merch keyword) always wins. Otherwise the item is not a shop candidate — a
+    recognisably general page (get-started / how-to-play / news / …) is False,
+    and so is anything else that carries no positive shop signal.
+    """
+    item = item or {}
+    url = str(item.get("url", "") or "")
+    title = str(item.get("title", "") or "")
+    text = str(item.get("text", "") or "")
+
+    parsed = urlparse(url.lower())
+    host = parsed.netloc
+    path = parsed.path
+
+    # Combined lowercased title+text+url is used for keyword signals.
+    combined = " ".join((title, text, url)).lower()
+
+    positive = (
+        "merch.riotgames.com" in host
+        or any(sig in path for sig in _SHOP_PATH_SIGNALS)
+        or any(sig in combined for sig in _SHOP_TEXT_SIGNALS)
+    )
+    if positive:
+        return True
+
+    # No positive shop signal: a general article/news/how-to-play page is False,
+    # and any other page with no shop signal is False too.
+    if any(sig in combined for sig in _ARTICLE_TEXT_SIGNALS):
+        return False
+    return False
+
+
 class WebhookError(Exception):
     """Raised when sending a Discord message fails.
 

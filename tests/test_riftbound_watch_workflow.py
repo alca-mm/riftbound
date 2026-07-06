@@ -144,6 +144,17 @@ def test_runs_watcher_for_all_three_modes():
     assert "watch" in text, "Workflow should support the normal watch mode"
 
 
+def test_targets_merch_riftbound_category():
+    text = _read(WORKFLOW_PATH)
+    assert "WATCH_TARGETS" in text, (
+        "Workflow should set WATCH_TARGETS so the watcher watches an "
+        "explicit merch category"
+    )
+    assert "merch.riotgames.com/de-de/category/riftbound" in text, (
+        "Workflow should target the merch Riftbound category URL"
+    )
+
+
 def test_least_privilege_permissions():
     text = _read(WORKFLOW_PATH)
     assert "contents: read" in text, (

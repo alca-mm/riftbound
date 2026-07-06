@@ -26,3 +26,8 @@ dist/
 
 # OS junk
 .DS_Store
+
+# Documentation policy: publish only the root README.md. Keep any other local
+# Markdown docs (extra guides, local change notes under docs/) OUT of GitHub.
+*.md
+!/README.md

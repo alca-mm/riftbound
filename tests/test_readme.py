@@ -90,15 +90,14 @@ def test_readme_documents_github_secret_and_placeholder():
     assert "replace_me" in low   # unedited placeholder is not sent
 
 
-def test_only_readme_markdown_file_in_project():
-    skip_dirs = {".venv", "venv", "env", ".git", ".idea", "__pycache__", ".pytest_cache"}
-    md_files = []
-    for root, dirs, files in os.walk(REPO_ROOT):
-        dirs[:] = [d for d in dirs if d not in skip_dirs]
-        for name in files:
-            if name.lower().endswith(".md"):
-                rel = os.path.relpath(os.path.join(root, name), REPO_ROOT)
-                md_files.append(rel.replace(os.sep, "/"))
-    assert md_files == ["README.md"], (
-        "Only README.md may be a Markdown file; found: %r" % sorted(md_files)
-    )
+def test_readme_documents_primary_merch_target():
+    text = _readme()
+    # Primary watch focus is the Riot merch Riftbound category (shop items).
+    assert "merch.riotgames.com/de-de/category/riftbound" in text
+
+
+def test_readme_documents_markdown_local_policy():
+    low = _readme().lower()
+    # Extra Markdown docs may exist locally but are git-ignored; README is tracked.
+    assert "git-ignored" in low
+    assert "readme" in low
