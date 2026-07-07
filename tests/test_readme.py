@@ -105,10 +105,10 @@ def test_readme_documents_markdown_local_policy():
 
 def test_readme_documents_github_actions_interval():
     low = _readme().lower()
-    # GitHub Actions runs on an interval (now every 30 minutes), not continuously.
+    # GitHub Actions runs on an interval (now every 2 hours), not continuously.
     assert "interval" in low
     assert "continuous" in low          # "does not continuously ..."
-    assert "30 minutes" in low          # scheduled status-report cadence
+    assert "2 hours" in low             # scheduled watch cadence
 
 
 def test_readme_documents_test_webhook_availability_preference():
@@ -130,4 +130,47 @@ def test_readme_documents_status_report_mode():
     assert "--status-report" in text
     assert "status report" in low
     assert "no links" in low
-    assert "every 30 minutes" in low   # the scheduled heartbeat cadence
+    # status-report is now MANUAL only — no longer tied to the automatic schedule
+    assert "manual" in low
+    assert "every 30 minutes" not in low   # old scheduled cadence must be gone
+    assert "30 minutes" not in low         # the 30-minute cadence is removed
+
+
+def test_readme_documents_auto_posts_only_new_hits():
+    low = _readme().lower()
+    # Automatic/scheduled run posts ONLY on new relevant hits ...
+    assert "only new relevant hits" in low
+    assert "only" in low and "new" in low
+    # ... and sends nothing when there is nothing new.
+    assert "nothing new" in low
+    assert "no discord message" in low
+
+
+def test_readme_documents_no_status_spam():
+    low = _readme().lower()
+    # The automatic schedule does not send "nothing new" status spam.
+    assert "no status spam" in low
+
+
+def test_readme_documents_status_report_is_manual():
+    text = _readme()
+    low = text.lower()
+    assert "status report" in low
+    assert "manual" in low
+    # the manual dispatch path is documented
+    assert "run workflow" in low
+    assert "--status-report" in text
+
+
+def test_readme_documents_test_webhook_is_manual():
+    low = _readme().lower()
+    assert "test-webhook" in low
+    assert "manual" in low
+
+
+def test_readme_documents_scheduled_watch_baseline():
+    low = _readme().lower()
+    # First scheduled/watch run writes a baseline and sends no message;
+    # later runs post new hits with a clickable link.
+    assert "baseline" in low
+    assert "clickable link" in low

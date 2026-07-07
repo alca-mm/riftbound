@@ -13,8 +13,8 @@ on:
           - watch
           - status-report
   schedule:
-    # Every 30 minutes: post a status report. Never more frequent than this.
-    - cron: "*/30 * * * *"
+    # Every 2 hours: run the watch and only post to Discord on new hits.
+    - cron: "0 */2 * * *"
 
 permissions:
   contents: read
@@ -27,8 +27,8 @@ jobs:
   watch:
     runs-on: ubuntu-latest
     env:
-      # On the schedule there is no input, so default to the notify-only status report.
-      MODE: ${{ github.event.inputs.mode || 'status-report' }}
+      # On the schedule there is no input, so default to the notify-only watch (posts only on new hits).
+      MODE: ${{ github.event.inputs.mode || 'watch' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

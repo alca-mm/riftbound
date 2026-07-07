@@ -187,14 +187,19 @@ python watcher.py
 - `state.json` is only ever modified in this mode.
 - Optional: `--state-path PATH` points at an alternative state file.
 
-### Status report
+### Status report (manual only)
 
 ```bash
 python watcher.py --status-report
 ```
 
-- Posts a heartbeat **status report** to Discord **even when there is nothing
-  new** — it is not gated on new hits.
+- **Manual only** — the **status report** is **not** part of the automatic
+  schedule. Run it locally with `--status-report`, or on GitHub via **Actions →
+  Riftbound Watch → Run workflow → `status-report`**.
+- Posts a **status report** summary to Discord **even when there is nothing new** —
+  it is not gated on new hits. This is exactly why it is **manual only**: keeping it
+  off the automatic schedule is what leaves that schedule quiet, with **no status
+  spam**.
 - Lists the currently **available** Riot merch Riftbound items (newest first) and
   clearly states whether there were any T1 / Worlds Champion Collection hits.
 - Contains **no links** — the status report has **no links** at all (no product
@@ -236,37 +241,43 @@ gh repo create riot --private --source . --remote origin --push
 ## Run on GitHub Actions (no laptop needed)
 
 GitHub Actions does not continuously or live-check the pages — it runs on a
-schedule (interval), now **every 30 minutes**, and on that schedule it posts the
-**status report** (the available-items heartbeat, no links), not the watch. The
-schedule is still an **interval**, not continuously live monitoring. Once the
-workflow is enabled and the `DISCORD_WEBHOOK_URL` repository Secret is set, **your
-laptop does not need to stay on** — GitHub Actions runs it for you. Beyond the
-schedule you can additionally trigger it manually: **Actions → Riftbound Watch →
-Run workflow**, choosing `dry-run`, `test-webhook`, `watch`, or `status-report`.
+schedule (interval), now **every 2 hours**, and on that schedule it runs the
+**watch** mode. On each scheduled run it posts to Discord **only when it finds new
+relevant hits** — when nothing new is found it sends **no Discord message** (there
+is **no status spam**, i.e. no "nothing new" heartbeat noise). The schedule is
+still an **interval**, not continuously live monitoring. Once the workflow is
+enabled and the `DISCORD_WEBHOOK_URL` repository Secret is set, **your laptop does
+not need to stay on** — GitHub Actions runs it for you. Beyond the schedule you can
+additionally trigger any mode manually: **Actions → Riftbound Watch → Run
+workflow**, choosing `dry-run`, `test-webhook`, `watch`, or `status-report`.
 
 - Workflow: **Riftbound Watch** (`.github/workflows/riftbound-watch.yml`).
-- `schedule`: now runs **every 30 minutes** and posts the **status report** (the
-  available-items list, no links). It is still an **interval**, not continuously
-  live monitoring.
-- `workflow_dispatch`: manual runs with a `mode` input — `dry-run`,
-  `test-webhook`, `watch`, or `status-report`. The `watch` mode (posts only NEW
-  relevant hits, each with a clickable product link) stays available via manual
-  **Run workflow**, or by adding your own separate schedule; it uses the state
-  **cache** for duplicate protection.
-- Mode behavior: `dry-run` never sends; `test-webhook` sends exactly one real
-  product with a clickable link when a shop/merch candidate is found; `watch`
-  writes a baseline on the first run (no message) and later posts only new
-  relevant shop/merch hits, each with a clickable link (no duplicate spam);
-  `status-report` posts the available-items list **without links** even when there
-  is nothing new. The bot never buys anything.
+- `schedule`: now runs the **watch** mode **every 2 hours** and posts **only new
+  relevant hits**, each with a clickable product link. When there is nothing new it
+  sends **no Discord message** — **no status spam**. It is still an **interval**,
+  not continuously live monitoring. The first scheduled `watch` run writes a
+  **baseline** to the state **cache** and sends **no message**; later runs post
+  only new relevant hits, each with a **clickable link**.
+- `workflow_dispatch`: **manual** runs with a `mode` input — `dry-run`,
+  `test-webhook`, `watch`, or `status-report`. `status-report` and `test-webhook`
+  are **manual only** (never scheduled); `dry-run` is **manual** and safe (no send,
+  no state write).
+- Mode behavior: `dry-run` never sends and writes no state; `test-webhook`
+  (**manual only**) sends exactly one real product with a clickable link when a
+  shop/merch candidate is found; `watch` writes a baseline on the first run (no
+  message) and later posts **only new relevant hits**, each with a clickable link
+  (no duplicate spam, no "nothing new" message); `status-report` (**manual only**)
+  posts the available-items list **without links** and never writes state. The bot
+  never buys anything.
 - The webhook comes **only** from the GitHub repository **Secret**
   `DISCORD_WEBHOOK_URL` — never from `.env` on the runner (local runs still use
   `.env`). No secret value ever appears in the YAML.
 - **State / duplicate protection:** `state.json` is persisted between runs via
   GitHub Actions **cache** (rolling key). A cache miss simply starts a fresh
   baseline and sends nothing, so a miss can never cause duplicate spam.
-- The first `watch` run writes a baseline and sends nothing; later runs post only
-  new relevant hits. It stays **notify-only**.
+- The first scheduled `watch` run writes a **baseline** and sends nothing; later
+  runs post **only new relevant hits**, each with a **clickable link**. It stays
+  **notify-only**.
 
 The separate `.github/workflows/tests.yml` is test-only: it runs the pytest suite
 and compile checks, never runs the watcher against real pages, never sends a
@@ -299,10 +310,10 @@ gh workflow run riftbound-watch.yml -f mode=watch
 ## Operation / scheduling
 
 - GitHub Actions is enough; your laptop does not need to stay on.
-- Keep any schedule **gentle** (a few times per hour at most) — do not poll
-  aggressively.
+- Keep any schedule **gentle** — the bundled workflow runs the `watch` mode
+  **every 2 hours** (recommended); do not poll aggressively.
 - To run it yourself instead, use cron / Task Scheduler at a gentle interval,
-  e.g. cron: `*/15 * * * * cd /path/to/riot && /path/to/riot/.venv/bin/python watcher.py >> watcher.log 2>&1`.
+  e.g. cron: `0 */2 * * * cd /path/to/riot && /path/to/riot/.venv/bin/python watcher.py >> watcher.log 2>&1`.
 - Never add auto-buy, login, checkout, or captcha automation.
 
 ## Configurable targets

@@ -160,12 +160,51 @@ def test_offers_status_report_mode():
     )
 
 
-def test_schedule_runs_status_report_by_default():
+def test_schedule_runs_watch_by_default():
     text = _read(WORKFLOW_PATH)
     # The scheduled run supplies no input, so MODE must default to the
-    # notify-only status report rather than the live watch.
-    assert "|| 'status-report'" in text, (
-        "The scheduled run (no input) should default MODE to 'status-report'"
+    # notify-only live watch (posts only on new hits).
+    assert "|| 'watch'" in text, (
+        "The scheduled run (no input) should default MODE to 'watch'"
+    )
+
+
+def test_schedule_does_not_default_to_status_report_or_test_webhook():
+    text = _read(WORKFLOW_PATH)
+    assert "|| 'status-report'" not in text, (
+        "The scheduled run must no longer default MODE to 'status-report'"
+    )
+    assert "|| 'test-webhook'" not in text, (
+        "The scheduled run must not default MODE to 'test-webhook'"
+    )
+
+
+def test_schedule_prefers_every_two_hours():
+    text = _read(WORKFLOW_PATH)
+    crons = _cron_expressions(text)
+    assert "0 */2 * * *" in crons, (
+        "The workflow should declare the every-2-hours cron '0 */2 * * *'"
+    )
+
+
+def test_manual_options_include_test_webhook_and_status_report():
+    text = _read(WORKFLOW_PATH)
+    # The workflow_dispatch options list must still offer all manual modes.
+    assert "- test-webhook" in text, (
+        "workflow_dispatch options should still include 'test-webhook'"
+    )
+    assert "- status-report" in text, (
+        "workflow_dispatch options should still include 'status-report'"
+    )
+
+
+def test_state_cache_save_gated_on_watch():
+    text = _read(WORKFLOW_PATH)
+    assert "env.MODE == 'watch'" in text, (
+        "State save should only happen for the 'watch' mode"
+    )
+    assert "actions/cache/restore" in text, (
+        "Workflow should still restore watcher state via actions/cache/restore"
     )
 
 
