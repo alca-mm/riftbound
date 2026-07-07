@@ -187,6 +187,48 @@ def test_schedule_prefers_every_two_hours():
     )
 
 
+def test_schedule_has_daily_heartbeat_cron():
+    text = _read(WORKFLOW_PATH)
+    crons = _cron_expressions(text)
+    assert "0 9 * * *" in crons, (
+        "The workflow should declare the daily 09:00 UTC heartbeat cron "
+        "'0 9 * * *'"
+    )
+
+
+def test_daily_cron_runs_heartbeat_mode():
+    text = _read(WORKFLOW_PATH)
+    assert "github.event.schedule == '0 9 * * *'" in text, (
+        "The daily cron should be detected via github.event.schedule"
+    )
+    assert "'heartbeat'" in text, (
+        "The daily cron should resolve MODE to 'heartbeat'"
+    )
+    assert "python watcher.py --heartbeat" in text, (
+        "Workflow should dispatch the watcher's heartbeat mode"
+    )
+
+
+def test_two_hourly_cron_still_runs_watch():
+    text = _read(WORKFLOW_PATH)
+    crons = _cron_expressions(text)
+    assert "0 */2 * * *" in crons, (
+        "The every-2-hours cron '0 */2 * * *' should remain declared"
+    )
+    assert "|| 'watch'" in text, (
+        "Every other schedule (the 2-hourly cron) should resolve MODE to "
+        "'watch'"
+    )
+
+
+def test_heartbeat_not_gated_into_state_save():
+    text = _read(WORKFLOW_PATH)
+    assert "env.MODE == 'watch'" in text, (
+        "State save must stay gated on the 'watch' mode only, so the "
+        "heartbeat mode never saves state"
+    )
+
+
 def test_manual_options_include_test_webhook_and_status_report():
     text = _read(WORKFLOW_PATH)
     # The workflow_dispatch options list must still offer all manual modes.

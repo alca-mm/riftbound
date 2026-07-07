@@ -174,3 +174,30 @@ def test_readme_documents_scheduled_watch_baseline():
     # later runs post new hits with a clickable link.
     assert "baseline" in low
     assert "clickable link" in low
+
+
+def test_readme_documents_daily_heartbeat():
+    text = _readme()
+    low = text.lower()
+    # New separate schedule: one short liveness message once daily, no links.
+    assert "--heartbeat" in text
+    assert "heartbeat" in low
+    assert "daily" in low
+    assert "utc" in low
+    assert "once" in low  # "once daily" / "once a day"
+    # The heartbeat carries no links (counts only, liveness confirmation).
+    assert "no links" in low
+
+
+def test_readme_documents_cron_is_utc():
+    text = _readme()
+    low = text.lower()
+    # GitHub Actions cron is in UTC; the heartbeat runs at 09:00 UTC.
+    assert "utc" in low
+    assert "09:00 utc" in low
+
+
+def test_readme_lists_heartbeat_cli_mode():
+    text = _readme()
+    # The local CLI heartbeat mode is documented verbatim.
+    assert "python watcher.py --heartbeat" in text

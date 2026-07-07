@@ -207,6 +207,24 @@ python watcher.py --status-report
 - Never changes `state.json` and never writes a baseline.
 - If no webhook is configured it aborts cleanly (no crash, no send).
 
+### Daily heartbeat
+
+```bash
+python watcher.py --heartbeat
+```
+
+- Sends exactly **one** short Discord status message so you know the watcher is
+  still alive — a deliberate **once-a-day** liveness ping, **not** a return to
+  frequent status spam.
+- **Counts only:** it reports simple counts and does **not** list the full product
+  catalog.
+- Contains **no links** at all (no product URLs) — it is purely a short
+  "still running" confirmation.
+- **Never** writes or changes `state.json` and never writes a baseline.
+- On GitHub Actions this same mode runs once daily at **09:00 UTC** (see below);
+  the automatic `watch` schedule is unchanged and still posts only new hits.
+- If no webhook is configured it aborts cleanly (no crash, no send).
+
 ## Upload to GitHub (you run all Git yourself)
 
 Git is done **only by you** — no automation runs Git. `.env` and `state.json` are
@@ -240,28 +258,42 @@ gh repo create riot --private --source . --remote origin --push
 
 ## Run on GitHub Actions (no laptop needed)
 
-GitHub Actions does not continuously or live-check the pages — it runs on a
-schedule (interval), now **every 2 hours**, and on that schedule it runs the
-**watch** mode. On each scheduled run it posts to Discord **only when it finds new
-relevant hits** — when nothing new is found it sends **no Discord message** (there
-is **no status spam**, i.e. no "nothing new" heartbeat noise). The schedule is
-still an **interval**, not continuously live monitoring. Once the workflow is
-enabled and the `DISCORD_WEBHOOK_URL` repository Secret is set, **your laptop does
-not need to stay on** — GitHub Actions runs it for you. Beyond the schedule you can
-additionally trigger any mode manually: **Actions → Riftbound Watch → Run
-workflow**, choosing `dry-run`, `test-webhook`, `watch`, or `status-report`.
+GitHub Actions does not continuously or live-check the pages — it runs on two
+separate **schedules** (intervals), not continuously live monitoring. **All
+GitHub Actions cron schedules run in UTC** (there is no DST logic):
+
+1. **`watch` — every 2 hours (new hits only).** On each scheduled `watch` run it
+   posts to Discord **only when it finds new relevant hits** — when nothing new is
+   found it sends **no Discord message** (there is **no status spam**, i.e. no
+   "nothing new" noise). This schedule is unchanged.
+2. **`heartbeat` — once daily at 09:00 UTC (one liveness ping).** A separate
+   schedule runs the new **heartbeat** mode **once a day** and posts exactly **one**
+   short Discord status message so you know the watcher is alive. Its cron is
+   `0 9 * * *`, which is **09:00 UTC** (GitHub cron is UTC, not Berlin time). The
+   heartbeat reports **counts only** (no full catalog), contains **no links**, and
+   **never** writes or changes state. This is a single short message once per day —
+   **not** a return to frequent status spam.
+
+Once the workflow is enabled and the `DISCORD_WEBHOOK_URL` repository Secret is
+set, **your laptop does not need to stay on** — GitHub Actions runs it for you.
+Beyond the schedules you can additionally trigger any mode manually: **Actions →
+Riftbound Watch → Run workflow**, choosing `dry-run`, `test-webhook`, `watch`,
+`heartbeat`, or `status-report`.
 
 - Workflow: **Riftbound Watch** (`.github/workflows/riftbound-watch.yml`).
-- `schedule`: now runs the **watch** mode **every 2 hours** and posts **only new
-  relevant hits**, each with a clickable product link. When there is nothing new it
-  sends **no Discord message** — **no status spam**. It is still an **interval**,
-  not continuously live monitoring. The first scheduled `watch` run writes a
-  **baseline** to the state **cache** and sends **no message**; later runs post
-  only new relevant hits, each with a **clickable link**.
+- `schedule`: two cron schedules, **both in UTC**. (1) The **watch** mode runs
+  **every 2 hours** and posts **only new relevant hits**, each with a clickable
+  product link; when there is nothing new it sends **no Discord message** — **no
+  status spam**. It is still an **interval**, not continuously live monitoring. The
+  first scheduled `watch` run writes a **baseline** to the state **cache** and sends
+  **no message**; later runs post only new relevant hits, each with a **clickable
+  link**. (2) The **heartbeat** mode runs **once daily at 09:00 UTC** (cron
+  `0 9 * * *`) and posts exactly **one** short liveness message (counts only, **no
+  links**) and **never** writes state.
 - `workflow_dispatch`: **manual** runs with a `mode` input — `dry-run`,
-  `test-webhook`, `watch`, or `status-report`. `status-report` and `test-webhook`
-  are **manual only** (never scheduled); `dry-run` is **manual** and safe (no send,
-  no state write).
+  `test-webhook`, `watch`, `heartbeat`, or `status-report`. `status-report` and
+  `test-webhook` are **manual only** (never scheduled); `dry-run` is **manual** and
+  safe (no send, no state write). `heartbeat` also runs on its own daily schedule.
 - Mode behavior: `dry-run` never sends and writes no state; `test-webhook`
   (**manual only**) sends exactly one real product with a clickable link when a
   shop/merch candidate is found; `watch` writes a baseline on the first run (no

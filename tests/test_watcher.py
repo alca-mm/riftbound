@@ -852,3 +852,75 @@ def test_status_report_without_webhook_aborts_cleanly(tmp_path):
     assert send.calls == []
     assert summary["posted"] == 0
     assert not os.path.exists(sp)
+
+
+# --- Daily heartbeat mode ----------------------------------------------------
+
+def test_heartbeat_sends_one_short_message_without_links_and_no_state(tmp_path):
+    sp = _state_path(tmp_path)
+    send = Recorder()
+    summary = watcher.run(
+        "heartbeat", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory([GENERIC_AVAILABLE_MERCH]), send_fn=send,
+    )
+    assert len(send.calls) == 1
+    content = send.calls[0][1]
+    assert "[STATUS]" in content
+    assert "heartbeat" in content.lower()
+    assert "running" in content.lower()
+    assert "http" not in content                         # NO links at all
+    assert "Riftbound Unleashed Vault" not in content    # NO product titles
+    assert summary["posted"] == 1
+    assert not os.path.exists(sp)                         # never writes state
+
+
+def test_heartbeat_reports_counts_from_relevant_merch(tmp_path):
+    sp = _state_path(tmp_path)
+    send = Recorder()
+    watcher.run(
+        "heartbeat", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory(
+            [GENERIC_AVAILABLE_MERCH, PREORDER_MERCH, UNKNOWN_MERCH, SOLDOUT_MERCH]
+        ),
+        send_fn=send,
+    )
+    content = send.calls[0][1]
+    assert "available: 1" in content
+    assert "preorder: 1" in content
+    assert "unknown: 1" in content
+
+
+def test_heartbeat_without_webhook_aborts_cleanly(tmp_path):
+    sp = _state_path(tmp_path)
+    send = Recorder()
+    summary = watcher.run(
+        "heartbeat", state_path=sp, webhook_url=None,
+        fetch_fn=fetch_fn_factory([GENERIC_AVAILABLE_MERCH]), send_fn=send,
+    )
+    assert send.calls == []
+    assert summary["posted"] == 0
+    assert not os.path.exists(sp)
+
+
+def test_heartbeat_never_touches_state_or_new_hit_logic(tmp_path):
+    sp = _state_path(tmp_path)
+    # Pre-seed a baseline that does NOT contain the item we will fetch, so any
+    # new-hit/diff logic WOULD react to it — the heartbeat must not.
+    st = state_mod.load_state(sp)
+    state_mod.record_items(st, [PREORDER_MERCH])
+    state_mod.save_state(sp, st)
+    snapshot = open(sp, "r", encoding="utf-8").read()
+
+    send = Recorder()
+    summary = watcher.run(
+        "heartbeat", state_path=sp, webhook_url=WEBHOOK,
+        fetch_fn=fetch_fn_factory([GENERIC_AVAILABLE_MERCH]), send_fn=send,
+    )
+    assert len(send.calls) == 1
+    content = send.calls[0][1]
+    assert "[STATUS]" in content
+    # It is the heartbeat, NOT a new-hit notification.
+    assert notify.MESSAGE_HEADER not in content
+    assert summary["state_written"] is False
+    # State file is byte-identical: no baseline write, no diff, no read-for-update.
+    assert open(sp, "r", encoding="utf-8").read() == snapshot

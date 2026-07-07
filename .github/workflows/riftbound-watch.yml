@@ -12,9 +12,13 @@ on:
           - test-webhook
           - watch
           - status-report
+          - heartbeat
   schedule:
     # Every 2 hours: run the watch and only post to Discord on new hits.
     - cron: "0 */2 * * *"
+    # Daily at 09:00 UTC: heartbeat -- one short liveness message, no links,
+    # no state write (just proves the automation is still alive).
+    - cron: "0 9 * * *"
 
 permissions:
   contents: read
@@ -27,8 +31,10 @@ jobs:
   watch:
     runs-on: ubuntu-latest
     env:
-      # On the schedule there is no input, so default to the notify-only watch (posts only on new hits).
-      MODE: ${{ github.event.inputs.mode || 'watch' }}
+      # A manual dispatch uses its chosen input. Otherwise the schedule decides:
+      # the daily 09:00 UTC cron -> heartbeat (short liveness, no links, no state);
+      # every other schedule (the 2-hourly cron) -> notify-only watch (posts only on new hits).
+      MODE: ${{ github.event.inputs.mode || (github.event.schedule == '0 9 * * *' && 'heartbeat') || 'watch' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -55,6 +61,7 @@ jobs:
             test-webhook)  python watcher.py --test-webhook-random-riftbound ;;
             watch)         python watcher.py ;;
             status-report) python watcher.py --status-report ;;
+            heartbeat)     python watcher.py --heartbeat ;;
             *) echo "Unknown mode: ${MODE}" >&2; exit 1 ;;
           esac
       - name: Save watcher state

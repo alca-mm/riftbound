@@ -658,3 +658,44 @@ def test_status_report_t1_whole_word_only_not_substring():
     assert _NO_T1_LINE not in hit
     miss = notify.format_status_report([_merch("Riftbound Battle Poster", text="available")])
     assert _NO_T1_LINE in miss
+
+
+# ---------------------------------------------------------------------------
+# format_heartbeat — SHORT daily heartbeat: counts only, NO links, NO titles,
+# never touches state (pure/offline; counts already-relevant items)
+# ---------------------------------------------------------------------------
+def test_heartbeat_has_status_header_running_and_no_links():
+    msg = notify.format_heartbeat([_merch("Riftbound Poster", text="available")])
+    assert "[STATUS]" in msg
+    assert "heartbeat" in msg.lower()
+    assert "running" in msg.lower()
+    assert _no_links(msg)
+
+
+def test_heartbeat_reports_availability_counts():
+    items = [
+        _merch("Riftbound A", text="available"),
+        _merch("Riftbound B", text="available"),
+        _merch("Riftbound C", text="preorder"),
+        _merch("Riftbound D", text=""),  # unknown
+    ]
+    msg = notify.format_heartbeat(items)
+    assert "available: 2" in msg
+    assert "preorder: 1" in msg
+    assert "unknown: 1" in msg
+
+
+def test_heartbeat_omits_item_titles():
+    msg = notify.format_heartbeat(
+        [_merch("Riftbound Secret Vault Title", text="available")]
+    )
+    # Counts only — never a product list.
+    assert "Riftbound Secret Vault Title" not in msg
+    assert "available: 1" in msg
+
+
+def test_heartbeat_empty_list_no_crash_no_links():
+    msg = notify.format_heartbeat([])
+    assert notify.HEARTBEAT_HEADER in msg
+    assert "available: 0" in msg
+    assert _no_links(msg)

@@ -23,6 +23,14 @@ CLI modes
       results. Never touches state.json. Aborts cleanly if there is no Riftbound
       hit.
 
+  python watcher.py --status-report
+      Post a heartbeat status message listing available Riftbound merch items
+      (no links). Never touches state.json.
+
+  python watcher.py --heartbeat
+      Send exactly ONE short daily heartbeat with availability counts only (no
+      links, no product list). Never touches state.json.
+
 Configuration comes from the environment variable ``DISCORD_WEBHOOK_URL``,
 optionally loaded from a local ``.env`` file (the environment variable takes
 precedence). See ``config.py``.
@@ -47,6 +55,7 @@ MODE_NORMAL = "normal"
 MODE_DRY_RUN = "dry-run"
 MODE_TEST_WEBHOOK = "test-webhook-random-riftbound"
 MODE_STATUS = "status-report"
+MODE_HEARTBEAT = "heartbeat"
 
 
 def _new_summary(mode: str) -> dict:
@@ -79,10 +88,15 @@ def run(
 
     The summary contains: mode, checked, relevant, new, posted, state_written.
     """
-    if mode not in (MODE_NORMAL, MODE_DRY_RUN, MODE_TEST_WEBHOOK, MODE_STATUS):
+    if mode not in (
+        MODE_NORMAL, MODE_DRY_RUN, MODE_TEST_WEBHOOK, MODE_STATUS, MODE_HEARTBEAT
+    ):
         raise ValueError(
             "Unknown mode %r; expected one of %r"
-            % (mode, (MODE_NORMAL, MODE_DRY_RUN, MODE_TEST_WEBHOOK, MODE_STATUS))
+            % (
+                mode,
+                (MODE_NORMAL, MODE_DRY_RUN, MODE_TEST_WEBHOOK, MODE_STATUS, MODE_HEARTBEAT),
+            )
         )
 
     fetch_fn = fetch_fn or fetch.fetch_targets
@@ -108,6 +122,8 @@ def run(
         return _run_test_webhook(summary, candidates, webhook_url, send_fn, rng)
     if mode == MODE_STATUS:
         return _run_status_report(summary, relevant, webhook_url, send_fn)
+    if mode == MODE_HEARTBEAT:
+        return _run_heartbeat(summary, relevant, webhook_url, send_fn)
     if mode == MODE_DRY_RUN:
         return _run_dry_run(summary, relevant, state_path)
     return _run_normal(summary, relevant, state_path, webhook_url, send_fn)
@@ -129,6 +145,27 @@ def _run_status_report(summary, relevant, webhook_url, send_fn) -> dict:
     summary["posted"] = 1
     logger.info(
         "Sent status report over %d relevant merch item(s). State unchanged.",
+        summary["relevant"],
+    )
+    return summary
+
+
+def _run_heartbeat(summary, relevant, webhook_url, send_fn) -> dict:
+    """Send the SHORT daily heartbeat: one message with availability counts only
+    (no links, no product list). Never reads or writes state, never writes a
+    baseline, never runs duplicate/new-hit logic.
+    """
+    content = notify.format_heartbeat(relevant)
+    if not webhook_url:
+        logger.error(
+            "DISCORD_WEBHOOK_URL is not set; cannot send the daily heartbeat. "
+            "State unchanged."
+        )
+        return summary
+    send_fn(webhook_url, content)
+    summary["posted"] = 1
+    logger.info(
+        "Sent daily heartbeat over %d relevant merch item(s). State unchanged.",
         summary["relevant"],
     )
     return summary
@@ -295,6 +332,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Post a heartbeat status message listing available Riftbound merch "
         "items (no links); never touch state.json.",
     )
+    group.add_argument(
+        "--heartbeat",
+        action="store_true",
+        dest="heartbeat",
+        help="Send exactly one short daily heartbeat with availability counts "
+        "only (no links, no product list); never touch state.json.",
+    )
     parser.add_argument(
         "--state-path",
         dest="state_path",
@@ -319,6 +363,8 @@ def main(argv=None) -> int:
         mode = MODE_TEST_WEBHOOK
     elif args.status_report:
         mode = MODE_STATUS
+    elif args.heartbeat:
+        mode = MODE_HEARTBEAT
     else:
         mode = MODE_NORMAL
 
@@ -327,7 +373,9 @@ def main(argv=None) -> int:
     # treated as "not configured" so the watcher never tries to send with it.
     raw = config.resolve_webhook_url()
     webhook_url = None if config.is_placeholder_webhook(raw) else raw
-    if mode in (MODE_NORMAL, MODE_TEST_WEBHOOK, MODE_STATUS) and not webhook_url:
+    if mode in (
+        MODE_NORMAL, MODE_TEST_WEBHOOK, MODE_STATUS, MODE_HEARTBEAT
+    ) and not webhook_url:
         # Never echo any value; only note whether it is absent or a placeholder.
         if raw:
             logger.warning(

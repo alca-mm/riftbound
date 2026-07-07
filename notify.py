@@ -23,6 +23,9 @@ MESSAGE_HEADER = "New Riftbound × T1 match found:"
 # Leading line for the periodic status / heartbeat report.
 STATUS_HEADER = "[STATUS] Riftbound merch check"
 
+# Leading line for the short daily heartbeat message.
+HEARTBEAT_HEADER = "[STATUS] Riftbound × T1 watcher heartbeat"
+
 # Path fragments that mark a more specific product / store / collection link.
 _STORE_PATH_HINTS = (
     "/product",
@@ -481,6 +484,35 @@ def format_status_report(items, *, max_items=15):
     if len(msg) > MAX_CONTENT:
         # Titles are already link-free, so a mid-string cut can never expose a
         # stray URL. End with a single-character ellipsis, staying <= MAX_CONTENT.
+        msg = msg[: MAX_CONTENT - 1].rstrip() + "…"
+    return msg
+
+
+def format_heartbeat(items):
+    """Build a SHORT daily heartbeat message: just availability counts, no list.
+
+    Pure/offline — the caller passes items that are already relevant shop/merch
+    items ({title,url,source,text}); this counts them by :func:`availability_status`
+    and formats a few fixed lines. It emits NO URL, NO item titles (counts only),
+    handles an empty list (all counts 0) without crashing, and is truncated to
+    ``MAX_CONTENT`` defensively. It reads/writes NO state.
+    """
+    counts = {"available": 0, "preorder": 0, "unknown": 0}
+    for it in items or []:
+        status = availability_status(it)
+        if status in counts:
+            counts[status] += 1
+
+    lines = [
+        HEARTBEAT_HEADER,
+        "The watcher is running.",
+        "Merch items detected — available: %d, preorder: %d, unknown: %d."
+        % (counts["available"], counts["preorder"], counts["unknown"]),
+        "New relevant hits are posted automatically by the scheduled watch runs; "
+        "this daily heartbeat sends no links and changes no state.",
+    ]
+    msg = "\n".join(lines)
+    if len(msg) > MAX_CONTENT:  # defensive: these fixed lines are always short
         msg = msg[: MAX_CONTENT - 1].rstrip() + "…"
     return msg
 
