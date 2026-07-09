@@ -826,7 +826,7 @@ def test_status_report_sends_one_message_without_links_and_no_state(tmp_path):
     assert not os.path.exists(sp)                                     # never writes state
 
 
-def test_status_report_lists_only_available_items(tmp_path):
+def test_status_report_separates_available_from_unavailable_items(tmp_path):
     sp = _state_path(tmp_path)
     send = Recorder()
     watcher.run(
@@ -836,10 +836,24 @@ def test_status_report_lists_only_available_items(tmp_path):
     )
     content = send.calls[0][1]
     assert "Available Riftbound merch items:" in content
-    after = content.split("Available Riftbound merch items:")[1]
-    assert "Riftbound Unleashed Vault" in after           # available listed
-    assert "Deck Box" not in after                        # unknown NOT in available list
-    assert "Worlds Champion Collection" not in after      # sold-out NOT in available list
+
+    # The available section holds only the available item.
+    avail = content.split("Available Riftbound merch items:")[1].split(
+        notify.UNAVAILABLE_HEADER
+    )[0]
+    assert "Riftbound Unleashed Vault" in avail            # available listed
+    assert "Deck Box" not in avail                         # unknown NOT in available list
+    assert "Worlds Champion Collection" not in avail       # sold-out NOT in available list
+
+    # The sold-out item is now surfaced in its own section instead of vanishing.
+    unavail = content.split(notify.UNAVAILABLE_HEADER)[1]
+    assert "Worlds Champion Collection" in unavail
+
+    # Counts are consistent: 3 detected = 1 available + 1 sold out + 1 unknown.
+    assert "Detected Riftbound merch items: 3" in content
+    assert "Available: 1" in content
+    assert "Unavailable / sold out: 1" in content
+    assert "Unknown: 1" in content
 
 
 def test_status_report_without_webhook_aborts_cleanly(tmp_path):

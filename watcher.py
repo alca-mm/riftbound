@@ -129,7 +129,12 @@ def run(
     summary["checked"] = len(candidates)
     # ALL new Riot-merch Riftbound shop items are watched — not just T1 ones.
     # The shop gate still keeps general articles / how-to-play pages out.
-    relevant = [it for it in candidates if is_watch_relevant_item(it)]
+    # Dedupe by URL: the two Riftbound category targets (the plain page and its
+    # ?sort=dateDesc variant) serve the SAME products, so without this every
+    # product would be counted twice and posted twice.
+    relevant = notify.dedupe_items(
+        [it for it in candidates if is_watch_relevant_item(it)]
+    )
     summary["relevant"] = len(relevant)
     logger.info(
         "Mode=%s: checked %d item(s), %d relevant merch item(s).",
@@ -210,12 +215,12 @@ def _run_test_webhook(summary, candidates, webhook_url, send_fn, rng) -> dict:
     shop/product link at all, it sends nothing and explains how to point
     WATCH_TARGETS at a concrete product URL.
     """
-    pool = [
+    pool = notify.dedupe_items([
         it for it in candidates
         if relevance.is_riftbound(it)
         and notify.is_shop_candidate(it)
         and notify.best_item_url(it)
-    ]
+    ])
     logger.info(
         "Mode=%s: %d Riftbound shop/merch candidate(s) in the static HTML.",
         MODE_TEST_WEBHOOK, len(pool),

@@ -247,3 +247,45 @@ def test_readme_states_no_auto_buy_login_checkout_captcha():
     assert "login" in low or "log in" in low
     assert "checkout" in low
     assert "captcha" in low
+
+
+def test_readme_documents_status_report_counts():
+    low = _readme().lower()
+    # The status report reports a total plus one count per availability bucket.
+    assert "total" in low
+    assert "unavailable" in low
+    assert "sold out" in low
+    assert "preorder" in low
+    assert "unknown" in low
+
+
+def test_readme_documents_status_report_lists_unavailable_items():
+    low = _readme().lower()
+    # Unavailable items are shown, not silently dropped.
+    assert "unavailable / sold out" in low
+
+
+def test_readme_documents_heartbeat_counts_without_product_list():
+    low = _readme().lower()
+    assert "heartbeat" in low
+    assert "counts" in low
+    assert "no links" in low
+    # The heartbeat never lists the catalog.
+    assert "does not list" in low or "no product list" in low
+
+
+def test_readme_documents_watch_reports_regardless_of_availability():
+    low = _readme().lower()
+    assert "regardless of availability" in low or "even when they are sold out" in low
+
+
+def test_readme_documents_possible_status_line_values():
+    text = _readme()
+    for value in ("Status: available", "Status: preorder", "Status: sold_out", "Status: unknown"):
+        assert value in text
+
+
+def test_readme_explains_lazy_loaded_remainder():
+    low = _readme().lower()
+    # Explains why the page can advertise more products than the bot can see.
+    assert "remainingskus" in low or "lazy-load" in low

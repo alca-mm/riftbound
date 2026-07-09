@@ -67,6 +67,18 @@ Match: t1, worlds champion collection
 Status: available
 ```
 
+Every new Riftbound merch shop item is posted **regardless of availability** — a
+sold-out product is still news. The `Status:` line reports the truth, and is one
+of:
+
+| Status line | Meaning |
+|---|---|
+| `Status: available` | in stock right now |
+| `Status: preorder` | orderable as a pre-order |
+| `Status: sold_out` | out of stock / unavailable |
+| `Status: coming_soon` | announced, not yet orderable |
+| `Status: unknown` | Riot published no clear availability signal |
+
 The daily heartbeat carries **no links** — only counts. New-hit notifications
 always carry the clickable link.
 
@@ -83,6 +95,18 @@ data is found in the HTML, the watcher finds nothing; you can set `WATCH_TARGETS
 to concrete product / collection URLs (for example a specific
 `https://merch.riotgames.com/de-de/product/<slug>`) so the watcher and the
 test-webhook have something to send.
+
+### Why the shop may show more items than the bot counts
+
+The category page embeds only its **first page** of product objects. The rest are
+listed as bare SKU codes in a `remainingSKUs` field and are **lazy-loaded**
+client-side when you scroll. Those SKUs carry no product name, no slug and no
+availability, so they cannot be turned into a notification without an extra
+request to an endpoint the static HTML does not reveal — and this bot does not
+use a browser. The watcher therefore counts the products it can actually see and
+logs how many further products the page advertises. Deduping is done by product
+URL/slug, so the two watched category targets (the plain page and its
+`?sort=dateDesc` variant) can never count the same product twice.
 
 ## Security boundaries (what this bot does NOT do)
 
@@ -234,9 +258,17 @@ python watcher.py --status-report
   it is not gated on new hits. This is exactly why it is **manual only**: keeping it
   off the automatic schedule is what leaves that schedule quiet, with **no status
   spam**.
+- Reports a **total** count plus one count per availability bucket:
+  **Available**, **Unavailable / sold out**, **Preorder**, **Unknown** (and
+  **Coming soon** when any exist). The total always equals the sum of the
+  buckets, so the counts can never contradict each other.
 - Lists **all** currently **available** Riot merch Riftbound items (newest first),
   not only the T1 ones, and additionally states whether there were any
   T1 / Worlds Champion Collection hits among them.
+- Also lists the **Unavailable / sold out** items in their own section, so
+  out-of-stock products are visible instead of silently dropped. Each list is
+  capped (10 by default) with an `...and N more` tail. Unknown-availability items
+  are counted but not listed.
 - Contains **no links** — the status report has **no links** at all (no product
   URLs), so it is purely a summary you read.
 - Never changes `state.json` and never writes a baseline.
@@ -251,8 +283,13 @@ python watcher.py --heartbeat
 - Sends exactly **one** short Discord status message so you know the watcher is
   still alive — a deliberate **once-a-day** liveness ping, **not** a return to
   frequent status spam.
-- **Counts only:** it reports simple counts and does **not** list the full product
-  catalog.
+- **Counts only:** it reports a **total** plus the available / unavailable /
+  preorder / unknown counts, and **does not list** the full product catalog (no
+  product list, no titles). Example:
+
+  ```
+  Merch items detected — total: 16, available: 8, unavailable: 8, preorder: 0, unknown: 0.
+  ```
 - Contains **no links** at all (no product URLs) — it is purely a short
   "still running" confirmation.
 - **Never** writes or changes `state.json` and never writes a baseline.
@@ -334,8 +371,8 @@ Riftbound Watch → Run workflow**, choosing `dry-run`, `test-webhook`, `watch`,
   shop/merch candidate is found; `watch` writes a baseline on the first run (no
   message) and later posts **only new relevant hits**, each with a clickable link
   (no duplicate spam, no "nothing new" message); `status-report` (**manual only**)
-  posts the available-items list **without links** and never writes state. The bot
-  never buys anything.
+  posts the availability counts plus the available and unavailable item lists
+  **without links** and never writes state. The bot never buys anything.
 - The webhook comes **only** from the GitHub repository **Secret**
   `DISCORD_WEBHOOK_URL` — never from `.env` on the runner (local runs still use
   `.env`). No secret value ever appears in the YAML.

@@ -33,6 +33,13 @@ STATUS_HEADER = "[STATUS] Riftbound merch check"
 # Leading line for the short daily heartbeat message.
 HEARTBEAT_HEADER = "[STATUS] Riftbound × T1 watcher heartbeat"
 
+# Section headers of the status report. UNAVAILABLE_HEADER deliberately reads
+# "Unavailable / sold out …" so it can never be confused with AVAILABLE_HEADER
+# by a substring check.
+AVAILABLE_HEADER = "Available Riftbound merch items:"
+PREORDER_HEADER = "Preorder Riftbound merch items:"
+UNAVAILABLE_HEADER = "Unavailable / sold out Riftbound merch items:"
+
 # Path fragments that mark a more specific product / store / collection link.
 _STORE_PATH_HINTS = (
     "/product",
@@ -218,6 +225,51 @@ def availability_score(item) -> int:
     """``AVAILABILITY_RANK[availability_status(item)]`` — higher = more sendable
     in the test webhook. Pure/offline."""
     return AVAILABILITY_RANK[availability_status(item)]
+
+
+def dedupe_items(items):
+    """Collapse duplicate items, preserving input order (newest first).
+
+    Identity mirrors :func:`state.item_id`: the lowercased URL when present,
+    otherwise the lowercased title. This matters because the watcher fetches two
+    Riftbound category targets (the plain page and its ``?sort=dateDesc``
+    variant) that serve the SAME products — without this every product would be
+    counted, listed and posted twice. Items with neither a URL nor a title are
+    dropped. Pure/offline.
+    """
+    seen = set()
+    out = []
+    for item in items or []:
+        item = item or {}
+        url = str(item.get("url", "") or "").strip().lower()
+        title = str(item.get("title", "") or "").strip().lower()
+        key = url or title
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def count_by_availability(items):
+    """Return ``{"total": N, "available": N, "preorder": N, "sold_out": N,
+    "coming_soon": N, "unknown": N}`` over ALREADY-DEDUPED ``items``.
+
+    ``total`` is the number of items and always equals the sum of the buckets, so
+    the counts can never contradict each other. Pure/offline.
+    """
+    counts = {
+        "total": 0,
+        "available": 0,
+        "preorder": 0,
+        "sold_out": 0,
+        "coming_soon": 0,
+        "unknown": 0,
+    }
+    for item in items or []:
+        counts["total"] += 1
+        counts[availability_status(item)] += 1
+    return counts
 
 
 class WebhookError(Exception):
@@ -489,34 +541,32 @@ def _numbered_section(items, max_items, noun):
     return lines
 
 
-def format_status_report(items, *, max_items=15):
-    """Build a periodic heartbeat message listing currently AVAILABLE Riftbound
-    merch items, WITHOUT any links. Pure/offline — the caller passes items that
-    are already relevant shop/merch items ({title,url,source,text}); this splits
-    them by :func:`availability_status` and formats. NEVER emits a URL.
+def format_status_report(items, *, max_items=10):
+    """Build the status report: total + per-status counts, then the AVAILABLE,
+    PREORDER and UNAVAILABLE item lists, WITHOUT any links. Pure/offline — the
+    caller passes items that are already relevant shop/merch items
+    ({title,url,source,text}). NEVER emits a URL.
 
-    Items are deduped by title (case-insensitive) preserving input order (the
-    source is date-desc sorted, so the newest item stays on top); empty titles
-    are skipped. Available and preorder items are listed in separate numbered
-    sections (each capped at ``max_items``). The status line highlights any
-    available Riftbound × T1 / Worlds Champion Collection items. The whole
-    message is sanitized (no ``http(s)://``) and truncated to ``MAX_CONTENT``.
+    Items are deduped by :func:`dedupe_items` (URL first, title as fallback), so
+    the two Riftbound category targets serving the same products cannot inflate
+    the numbers; input order (newest first) is preserved and empty titles are
+    skipped. ``total`` always equals the sum of the per-status counts.
+
+    Available, preorder and unavailable items are listed in separate numbered
+    sections, each capped at ``max_items`` with an ``"...and N more"`` tail.
+    Unknown-availability items are counted but not listed (there is nothing
+    honest to say about them). ``Coming soon`` is shown only when non-zero. The
+    whole message is sanitized (no ``http(s)://``) and truncated to ``MAX_CONTENT``.
     """
-    seen = set()
-    deduped = []
-    for it in items or []:
-        it = it or {}
-        title = str(it.get("title", "") or "").strip()
-        if not title:
-            continue
-        key = title.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(it)
+    deduped = [
+        it for it in dedupe_items(items)
+        if str((it or {}).get("title", "") or "").strip()
+    ]
 
+    counts = count_by_availability(deduped)
     available = [it for it in deduped if availability_status(it) == "available"]
     preorder = [it for it in deduped if availability_status(it) == "preorder"]
+    unavailable = [it for it in deduped if availability_status(it) == "sold_out"]
     t1_hits = [it for it in available if _is_t1_highlight(it)]
 
     lines = [STATUS_HEADER]
@@ -529,8 +579,17 @@ def format_status_report(items, *, max_items=15):
         lines.append("No new Riftbound × T1 / Worlds Champion Collection hits found.")
     lines.append("")
 
+    lines.append("Detected Riftbound merch items: %d" % counts["total"])
+    lines.append("Available: %d" % counts["available"])
+    lines.append("Unavailable / sold out: %d" % counts["sold_out"])
+    lines.append("Preorder: %d" % counts["preorder"])
+    if counts["coming_soon"]:
+        lines.append("Coming soon: %d" % counts["coming_soon"])
+    lines.append("Unknown: %d" % counts["unknown"])
+    lines.append("")
+
     if available:
-        lines.append("Available Riftbound merch items:")
+        lines.append(AVAILABLE_HEADER)
         lines.extend(_numbered_section(available, max_items, "available"))
     else:
         lines.append(
@@ -539,8 +598,13 @@ def format_status_report(items, *, max_items=15):
 
     if preorder:
         lines.append("")
-        lines.append("Preorder Riftbound merch items:")
+        lines.append(PREORDER_HEADER)
         lines.extend(_numbered_section(preorder, max_items, "preorder"))
+
+    if unavailable:
+        lines.append("")
+        lines.append(UNAVAILABLE_HEADER)
+        lines.extend(_numbered_section(unavailable, max_items, "unavailable"))
 
     msg = "\n".join(lines)
     if len(msg) > MAX_CONTENT:
@@ -554,22 +618,27 @@ def format_heartbeat(items):
     """Build a SHORT daily heartbeat message: just availability counts, no list.
 
     Pure/offline — the caller passes items that are already relevant shop/merch
-    items ({title,url,source,text}); this counts them by :func:`availability_status`
-    and formats a few fixed lines. It emits NO URL, NO item titles (counts only),
-    handles an empty list (all counts 0) without crashing, and is truncated to
+    items ({title,url,source,text}); this dedupes them with :func:`dedupe_items`
+    (so identical products from the two category targets are not counted twice),
+    counts them by :func:`availability_status`, and formats a few fixed lines.
+    ``total`` always equals the sum of the buckets. ``coming soon`` is shown only
+    when non-zero. It emits NO URL, NO item titles (counts only), handles an
+    empty list (all counts 0) without crashing, and is truncated to
     ``MAX_CONTENT`` defensively. It reads/writes NO state.
     """
-    counts = {"available": 0, "preorder": 0, "unknown": 0}
-    for it in items or []:
-        status = availability_status(it)
-        if status in counts:
-            counts[status] += 1
+    counts = count_by_availability(dedupe_items(items))
+
+    detected = "Merch items detected — total: %d, available: %d, unavailable: %d, preorder: %d" % (
+        counts["total"], counts["available"], counts["sold_out"], counts["preorder"],
+    )
+    if counts["coming_soon"]:
+        detected += ", coming soon: %d" % counts["coming_soon"]
+    detected += ", unknown: %d." % counts["unknown"]
 
     lines = [
         HEARTBEAT_HEADER,
         "The watcher is running.",
-        "Merch items detected — available: %d, preorder: %d, unknown: %d."
-        % (counts["available"], counts["preorder"], counts["unknown"]),
+        detected,
         "New relevant hits are posted automatically by the scheduled watch runs; "
         "this daily heartbeat sends no links and changes no state.",
     ]

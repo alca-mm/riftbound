@@ -537,17 +537,25 @@ def test_status_report_has_header_lists_available_in_input_order_no_links():
     assert _no_links(msg)
 
 
-def test_status_report_available_only_excludes_sold_out_and_unknown():
+def test_status_report_sold_out_listed_separately_unknown_only_counted():
     items = [
         _merch("Riftbound Available Mug", text="available"),
         _merch("Riftbound Sold Out Hoodie", text="sold out"),
         _merch("Riftbound Mystery Item", text=""),  # unknown
     ]
     msg = notify.format_status_report(items)
-    assert "Riftbound Available Mug" in msg
-    # The sold-out and unknown items must NOT appear in the available list.
-    assert "Riftbound Sold Out Hoodie" not in msg
+
+    # The available item is in the available section...
+    avail_section = msg.split(_AVAIL_HEADER)[1].split(notify.UNAVAILABLE_HEADER)[0]
+    assert "Riftbound Available Mug" in avail_section
+    assert "Riftbound Sold Out Hoodie" not in avail_section
+
+    # ...and the sold-out item gets its own section rather than being dropped.
+    assert "Riftbound Sold Out Hoodie" in msg.split(notify.UNAVAILABLE_HEADER)[1]
+
+    # Unknown-availability items are counted but never listed.
     assert "Riftbound Mystery Item" not in msg
+    assert "Unknown: 1" in msg
 
 
 def test_status_report_preorder_items_in_separate_section_not_available_list():

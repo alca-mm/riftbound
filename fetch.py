@@ -147,21 +147,132 @@ def _locale_from_source(source_url: str) -> str:
     return "de-de"
 
 
+# Availability tokens, checked NEGATIVES FIRST because the negative phrases
+# contain the positive ones as substrings ("unavailable" contains "available",
+# "outOfStock" contains "stock"). Each matched token is REMOVED from the working
+# string before the next class is tested, so a negative can never leak a false
+# positive.
+_AV_NEGATIVE = (
+    "outofstock", "out_of_stock", "out-of-stock", "out of stock",
+    "soldout", "sold_out", "sold out", "sold",
+    "notavailable", "not_available", "not available",
+    "unavailable", "unavail",
+    "nicht verfügbar", "nicht lieferbar", "ausverkauft",
+)
+_AV_PREORDER = ("preorder", "pre_order", "pre-order", "pre order", "vorbestell")
+_AV_COMING_SOON = ("comingsoon", "coming_soon", "coming-soon", "coming soon")
+_AV_POSITIVE = (
+    "instock", "in_stock", "in-stock", "in stock",
+    "available", "auf lager", "lieferbar", "verfugbar", "verfügbar",
+)
+
+# Boolean-valued keys inside an availability object. The key's meaning decides
+# whether `true` is good news ("available":true) or bad ("outOfStock":true).
+_AV_TRUE_MEANS_AVAILABLE = ("available", "availableforsale", "isavailable", "instock")
+_AV_TRUE_MEANS_SOLD_OUT = ("outofstock", "soldout", "unavailable")
+
+_AV_KEY_BOOL_RE = re.compile(r'"([a-z_]+)"\s*:\s*(true|false)')
+
+
 def _availability_text(raw_value: str) -> str:
     """Map a product's embedded availability value to a phrase the availability
     detector understands ('sold out' / 'pre-order' / 'available' / 'coming soon'),
     or '' when unknown. Best-effort and honest — never invents availability.
+
+    Handles every shape the embedded store data may use:
+
+      * a plain string   ``"inStock"`` / ``"outOfStock"`` (what Riot ships today)
+      * a bare boolean   ``true`` / ``false``; ``null`` stays unknown
+      * an object        ``{"available": false}`` / ``{"outOfStock": true}``
+      * a variant array  ``[{"availability":"outOfStock"},{"availability":"inStock"}]``
+
+    For variants, ANY available variant makes the product available; otherwise a
+    pre-order variant makes it pre-order; otherwise, if a negative was seen, it is
+    sold out. With no recognisable signal at all it returns ``""`` (unknown) —
+    a missing field is never silently treated as available.
     """
-    v = (raw_value or "").lower()
-    if any(k in v for k in ("sold", "out_of", "out-of", "outofstock", "unavail", "not_avail", "notavail", "ausverkauft")):
-        return "sold out"
-    if "preorder" in v or "vorbestell" in v or ("pre" in v and "order" in v):
-        return "pre-order"
-    if any(k in v for k in ("in_stock", "instock", "in stock", "available", "auf lager", "lieferbar", "verfugbar", "verfügbar")):
+    v = (raw_value or "").strip().lower()
+    if not v:
+        return ""
+
+    # Bare scalars. `null` carries no information -> unknown.
+    if v in ("null", "none"):
+        return ""
+    if v == "true":
         return "available"
-    if "coming" in v or "soon" in v:
+    if v == "false":
+        return "sold out"
+
+    positive = negative = preorder = coming = False
+
+    # Resolve "<key>": true|false pairs by the key's meaning, then strip them so
+    # the key names cannot be re-matched as bare word tokens below.
+    for key, boolean in _AV_KEY_BOOL_RE.findall(v):
+        is_true = boolean == "true"
+        if key in _AV_TRUE_MEANS_AVAILABLE:
+            positive |= is_true
+            negative |= not is_true
+        elif key in _AV_TRUE_MEANS_SOLD_OUT:
+            negative |= is_true
+            positive |= not is_true
+    work = _AV_KEY_BOOL_RE.sub(" ", v)
+
+    # Negatives first, removing each match so "unavailable" cannot also register
+    # as "available" further down.
+    for token in _AV_NEGATIVE:
+        if token in work:
+            negative = True
+            work = work.replace(token, " ")
+    for token in _AV_PREORDER:
+        if token in work:
+            preorder = True
+            work = work.replace(token, " ")
+    for token in _AV_COMING_SOON:
+        if token in work:
+            coming = True
+            work = work.replace(token, " ")
+    for token in _AV_POSITIVE:
+        if token in work:
+            positive = True
+
+    # Any available variant wins; then pre-order; then coming soon; then sold out.
+    if positive:
+        return "available"
+    if preorder:
+        return "pre-order"
+    if coming:
         return "coming soon"
+    if negative:
+        return "sold out"
     return ""
+
+
+# The category page embeds only the first page of products and lists the SKUs of
+# the rest here; the grid lazy-loads them client-side. Counting them lets the
+# watcher be honest about how many products the page advertises in total.
+_REMAINING_SKUS_RE = re.compile(r'"remainingSKUs":\s*\[([^\]]*)\]')
+
+
+def extract_remaining_sku_count(html: str) -> int:
+    """Number of products advertised by the page but NOT embedded in its HTML.
+
+    Riot's Riftbound category page embeds a first page of product objects and
+    exposes the remaining products only as bare SKU codes in ``remainingSKUs``;
+    the grid fetches them client-side. Those SKUs carry no slug, title or
+    availability, so they cannot be turned into candidate items without an extra
+    request to an endpoint the static HTML does not reveal. Pure/offline; never
+    raises.
+    """
+    if not html:
+        return 0
+    try:
+        un = html.replace('\\"', '"')
+        match = _REMAINING_SKUS_RE.search(un)
+        if not match:
+            return 0
+        return len(re.findall(r'"[^"]+"', match.group(1)))
+    except Exception:  # pragma: no cover - defensive, regex cannot realistically raise
+        return 0
 
 
 def extract_products_json(source_url: str, html: str) -> list[dict]:
@@ -216,6 +327,14 @@ def extract_products_json(source_url: str, html: str) -> list[dict]:
                     "source": source_url,
                     "text": text,
                 }
+            )
+        remaining = extract_remaining_sku_count(html)
+        if remaining:
+            logger.info(
+                "%s: %d product(s) embedded in the page; %d further product(s) are "
+                "advertised as remainingSKUs and lazy-loaded client-side, so they "
+                "carry no title/slug/availability here and are not watched.",
+                source_url, len(items), remaining,
             )
         return items
     except Exception as exc:  # never let a parser hiccup crash the watcher
