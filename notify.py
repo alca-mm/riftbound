@@ -20,6 +20,13 @@ MAX_CONTENT = 2000
 # Leading line for every notification message.
 MESSAGE_HEADER = "New Riftbound × T1 match found:"
 
+# Leading lines for a NEW watch hit. Every new Riot-merch Riftbound shop item is
+# posted with NEW_ITEM_HEADER; a T1 / Worlds / Signature / Player Bundle / Faker
+# / Galio item is additionally HIGHLIGHTED. The highlight is a marker, never a
+# precondition for posting.
+NEW_ITEM_HEADER = "New Riftbound merch item found:"
+HIGHLIGHT_ITEM_HEADER = "🔥 New highlighted Riftbound × T1 merch item found:"
+
 # Leading line for the periodic status / heartbeat report.
 STATUS_HEADER = "[STATUS] Riftbound merch check"
 
@@ -368,6 +375,61 @@ def format_message(item, reasons=None):
             title = ""
 
     lines = [MESSAGE_HEADER]
+    if title:
+        lines.append(title)
+    lines.extend(tail_lines)
+    msg = "\n".join(lines)
+    if len(msg) > MAX_CONTENT:  # final safety net
+        msg = msg[:MAX_CONTENT]
+    return msg
+
+
+def format_new_item_message(item, special_reasons=None):
+    """Build the Discord message for a NEW Riot-merch Riftbound shop item.
+
+    Layout (each on its own line)::
+
+        <NEW_ITEM_HEADER>            # or HIGHLIGHT_ITEM_HEADER when special
+        <title>                      # truncated if needed
+        <best_item_url(item)>        # omitted entirely when there is no valid link
+        Match: t1, worlds champion collection   # only when special_reasons is non-empty
+        Status: available
+
+    ``special_reasons`` is the (possibly empty) list from
+    :func:`relevance.special_reasons`. A non-empty list switches the header to
+    the highlight variant and adds the ``Match:`` line — it never decides
+    WHETHER a message is sent. The link is a bare URL on its own line so Discord
+    renders it clickable. Never contains a secret; stays under Discord's
+    2000-character limit (the title is truncated so header, link, Match and
+    Status always survive). Pure/offline.
+    """
+    item = item or {}
+    title = str(item.get("title", "")).strip()
+    link = best_item_url(item)
+
+    reason_str = ""
+    if special_reasons:
+        reason_str = ", ".join(
+            str(r) for r in special_reasons if r is not None and str(r) != ""
+        )
+    header = HIGHLIGHT_ITEM_HEADER if reason_str else NEW_ITEM_HEADER
+
+    tail_lines = []
+    if link:
+        tail_lines.append(link)
+    if reason_str:
+        tail_lines.append("Match: " + reason_str)
+    tail_lines.append("Status: " + availability_status(item))
+
+    # Everything except the title is fixed and must survive truncation. Reserve
+    # its characters plus one newline per fixed line.
+    fixed_lines = [header] + tail_lines
+    reserve = sum(len(line) for line in fixed_lines) + len(fixed_lines)
+    budget = max(MAX_CONTENT - reserve, 0)
+    if len(title) > budget:
+        title = title[: budget - 1].rstrip() + "…" if budget >= 1 else ""
+
+    lines = [header]
     if title:
         lines.append(title)
     lines.extend(tail_lines)

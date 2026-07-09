@@ -201,3 +201,49 @@ def test_readme_lists_heartbeat_cli_mode():
     text = _readme()
     # The local CLI heartbeat mode is documented verbatim.
     assert "python watcher.py --heartbeat" in text
+
+
+def test_readme_states_all_new_riftbound_merch_items_are_reported():
+    low = _readme().lower()
+    # The automatic watch reports EVERY new Riftbound merch shop item.
+    assert "all new" in low
+    assert "riftbound" in low
+    assert "shop" in low
+
+
+def test_readme_states_t1_is_highlighted_not_required():
+    low = _readme().lower()
+    assert "highlight" in low
+    # T1 must be explicitly described as NOT a precondition.
+    assert "not required" in low or "not a requirement" in low
+    assert "not t1-only" in low or "not only t1" in low
+
+
+def test_readme_still_excludes_general_articles():
+    low = _readme().lower()
+    assert "how to play" in low
+    assert "get-started" in low
+    assert "top decks" in low
+    assert "newsletter" in low
+    assert "not" in low
+
+
+def test_readme_documents_new_hit_links_and_linkless_heartbeat():
+    low = _readme().lower()
+    # New-hit notifications carry a clickable link; the heartbeat never does.
+    assert "clickable link" in low
+    assert "no links" in low
+
+
+def test_readme_documents_watch_interval_and_daily_heartbeat():
+    low = _readme().lower()
+    assert "2 hours" in low
+    assert "daily" in low
+
+
+def test_readme_states_no_auto_buy_login_checkout_captcha():
+    low = _readme().lower()
+    assert "buy" in low
+    assert "login" in low or "log in" in low
+    assert "checkout" in low
+    assert "captcha" in low

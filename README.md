@@ -1,11 +1,10 @@
 # riot — Riftbound × T1 Discord Watcher
 
 A small, **notify-only** Python watcher. It checks a handful of **public**
-Riot / Riftbound pages and, when something new and relevant to the
-**Riftbound × T1 Worlds Champion Collection** appears, posts a message to a
-Discord webhook. This README is the single source of truth — everything you need
-to install it, use Discord, upload it to GitHub, and run it on GitHub Actions is
-here.
+Riot / Riftbound pages and posts a message to a Discord webhook whenever a new
+Riot merch **Riftbound shop item** appears. This README is the single source of
+truth — everything you need to install it, use Discord, upload it to GitHub, and
+run it on GitHub Actions is here.
 
 **Primary watch focus — Riot merch shop items in the Riftbound category:**
 
@@ -13,28 +12,63 @@ here.
 https://merch.riotgames.com/de-de/category/riftbound/
 ```
 
-The newest-first variant `…/riftbound/?page=1&sort=dateDesc` is also watched. The
-watcher deliberately focuses on **shop / product / merch items** here. General
-Riftbound pages — news, newsletters, "how to play" / get-started articles, top
-decks — are **not** the target and are not sent to Discord.
+The newest-first variant `…/riftbound/?page=1&sort=dateDesc` is also watched.
 
-It focuses narrowly on:
+## What gets reported
 
-- Riftbound
-- T1
-- Worlds Champion Collection
-- Signature Edition
-- Player Bundle
-- Faker / Galio and other T1 player/champion references
-- Drawing / lottery / availability in the Riot merch store
+The automatic watch reports **all new** Riot merch Riftbound **shop** items. It
+is **not T1-only**.
+
+- **Every** new Riftbound merch shop product is posted — a plain
+  `Riftbound: Origins Champion Deck - Jinx` counts just as much as a T1 drop.
+- A product still counts when its title or slug never spells out "Riftbound",
+  as long as it is a product in the Riot merch Riftbound category.
+- T1 items are **highlighted**, they are **not required**. A hit matching **T1**,
+  **Worlds Champion Collection**, **Signature Edition**, **Player Bundle**,
+  **Faker / Galio** or another T1 player/champion reference is posted with a 🔥
+  highlight header and an extra `Match:` line. Everything else is posted with the
+  plain header.
+
+General Riftbound pages are **not** reported and are never sent to Discord:
+
+- news / blog articles without a shop product
+- newsletters
+- "how to play" / get-started articles
+- top decks
+
+Both gates apply to every hit: it must be a **shop / product / merch** item
+**and** it must be a Riftbound merch item.
 
 ## Notifications
 
-Each Discord notification contains the **best available clickable link**. A
-direct product / Riot merch store / collection link is preferred; if no product
+Each new-hit Discord notification contains the **best available clickable link**.
+A direct product / Riot merch store / collection link is preferred; if no product
 link is available, a relevant article / news / drawing / source link is used
 instead. The bot does **not** open or buy anything automatically — you click the
 link yourself.
+
+A normal new-hit message looks like this:
+
+```
+New Riftbound merch item found:
+Riftbound: Origins Champion Deck - Jinx
+https://merch.riotgames.com/de-de/product/riftbound-origins-champion-deck-jinx
+Status: available
+```
+
+A highlighted (T1 / Worlds / Signature / Player Bundle / Faker / Galio) hit adds
+the 🔥 header and a `Match:` line:
+
+```
+🔥 New highlighted Riftbound × T1 merch item found:
+Riftbound x T1 Worlds Champion Collection
+https://merch.riotgames.com/de-de/product/riftbound-t1-worlds-champion-collection
+Match: t1, worlds champion collection
+Status: available
+```
+
+The daily heartbeat carries **no links** — only counts. New-hit notifications
+always carry the clickable link.
 
 ## How products are discovered
 
@@ -200,8 +234,9 @@ python watcher.py --status-report
   it is not gated on new hits. This is exactly why it is **manual only**: keeping it
   off the automatic schedule is what leaves that schedule quiet, with **no status
   spam**.
-- Lists the currently **available** Riot merch Riftbound items (newest first) and
-  clearly states whether there were any T1 / Worlds Champion Collection hits.
+- Lists **all** currently **available** Riot merch Riftbound items (newest first),
+  not only the T1 ones, and additionally states whether there were any
+  T1 / Worlds Champion Collection hits among them.
 - Contains **no links** — the status report has **no links** at all (no product
   URLs), so it is purely a summary you read.
 - Never changes `state.json` and never writes a baseline.
@@ -401,7 +436,7 @@ corrupt/invalid file is re-baselined (with a warning), and writes are atomic
 riot/
   watcher.py            # CLI + orchestration (fetch → relevance → state → notify)
   fetch.py              # defensive public-page fetching + link extraction
-  relevance.py          # narrow Riftbound × T1 relevance filter
+  relevance.py          # Riftbound merch scope + T1/special highlight detection
   state.py              # robust, atomic state persistence + stable item ids
   notify.py             # Discord webhook sender + secret redaction + best-link
   config.py             # webhook + target resolution (env / .env, WATCH_TARGETS)

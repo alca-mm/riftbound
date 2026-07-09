@@ -1,8 +1,11 @@
 """watcher.py — NOTIFY-ONLY Discord watcher for the Riftbound x T1 collection.
 
-The watcher checks a small set of PUBLIC pages, keeps a narrow relevance filter
-focused on the Riftbound x T1 Worlds Champion Collection, and posts NEW relevant
-hits to a Discord webhook. It is strictly notify-only:
+The watcher checks a small set of PUBLIC pages and posts every NEW Riot-merch
+Riftbound SHOP item to a Discord webhook. T1 / Worlds Champion Collection /
+Signature Edition / Player Bundle / Faker / Galio items are additionally
+HIGHLIGHTED in the message — being T1-related is NOT a precondition for posting.
+General Riftbound articles (get-started, how-to-play, newsletters, top decks)
+are excluded by the shop gate. It is strictly notify-only:
 
   * It NEVER logs in, buys, checks out, solves captchas, bypasses rate limits,
     or scrapes aggressively.
@@ -58,6 +61,23 @@ MODE_STATUS = "status-report"
 MODE_HEARTBEAT = "heartbeat"
 
 
+def is_watch_relevant_item(item) -> bool:
+    """True iff a NEW ``item`` should be posted to Discord.
+
+    Two gates, BOTH mandatory:
+      1. Shop gate  — ``notify.is_shop_candidate``: it must look like a Riot
+         merch shop/product item, so general articles (get-started, how-to-play,
+         newsletters, top decks, news/blog) never reach Discord.
+      2. Watch scope — ``relevance.is_riftbound_merch_relevant``: it must be a
+         Riftbound merch item.
+
+    T1 / Worlds Champion Collection / Signature Edition / Player Bundle / Faker /
+    Galio are NOT required here. They only mark an item as a highlight in the
+    message (see :func:`relevance.special_reasons`).
+    """
+    return notify.is_shop_candidate(item) and relevance.is_riftbound_merch_relevant(item)
+
+
 def _new_summary(mode: str) -> dict:
     return {
         "mode": mode,
@@ -107,11 +127,9 @@ def run(
 
     candidates = fetch_fn(targets) or []
     summary["checked"] = len(candidates)
-    relevant = relevance.filter_relevant(candidates)
-    # Focus on shop/merch items: a relevant hit is only watched/posted when it
-    # looks like a Riot merch shop/product item, not a general article or
-    # how-to-play page. This keeps e.g. riftbound.com/get-started out of Discord.
-    relevant = [it for it in relevant if notify.is_shop_candidate(it)]
+    # ALL new Riot-merch Riftbound shop items are watched — not just T1 ones.
+    # The shop gate still keeps general articles / how-to-play pages out.
+    relevant = [it for it in candidates if is_watch_relevant_item(it)]
     summary["relevant"] = len(relevant)
     logger.info(
         "Mode=%s: checked %d item(s), %d relevant merch item(s).",
@@ -288,7 +306,8 @@ def _run_normal(summary, relevant, state_path, webhook_url, send_fn) -> dict:
     delivered = []
     try:
         for item in new:
-            content = notify.format_message(item, relevance.relevance_reasons(item))
+            # Every new merch item is posted; special_reasons only HIGHLIGHTS it.
+            content = notify.format_new_item_message(item, relevance.special_reasons(item))
             send_fn(webhook_url, content)
             delivered.append(item)
     finally:
