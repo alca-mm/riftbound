@@ -211,7 +211,10 @@ def test_new_item_message_omits_status_line_never_and_survives_missing_url():
     item = {"title": "Riftbound Thing", "url": "", "source": "", "text": ""}
     content = notify.format_new_item_message(item, [])
     assert "Status: unknown" in content
-    assert "http" not in content
+    # No product link exists, so the always-present store link is the ONLY
+    # http(s) URL — no broken/partial product link leaks in.
+    assert content.count("http") == 1
+    assert notify.STORE_LINK_PREFIX + notify.RIFTBOUND_STORE_URL in content
 
 
 def test_new_item_message_stays_within_discord_limit():

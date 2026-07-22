@@ -44,8 +44,12 @@ Both gates apply to every hit: it must be a **shop / product / merch** item
 Each new-hit Discord notification contains the **best available clickable link**.
 A direct product / Riot merch store / collection link is preferred; if no product
 link is available, a relevant article / news / drawing / source link is used
-instead. The bot does **not** open or buy anything automatically — you click the
-link yourself.
+instead. In addition, **every new-hit and test message always ends with a
+clickable link to the Riot merch Riftbound store** (the category landing page,
+`https://merch.riotgames.com/de-de/category/riftbound/`) on its own
+`Riftbound store:` line — so there is always a store link to click, even when a
+product-specific link is missing. The bot does **not** open or buy anything
+automatically — you click the link yourself.
 
 A normal new-hit message looks like this:
 
@@ -54,6 +58,7 @@ New Riftbound merch item found:
 Riftbound: Origins Champion Deck - Jinx
 https://merch.riotgames.com/de-de/product/riftbound-origins-champion-deck-jinx
 Status: available
+Riftbound store: https://merch.riotgames.com/de-de/category/riftbound/
 ```
 
 A highlighted (T1 / Worlds / Signature / Player Bundle / Faker / Galio) hit adds
@@ -65,6 +70,7 @@ Riftbound x T1 Worlds Champion Collection
 https://merch.riotgames.com/de-de/product/riftbound-t1-worlds-champion-collection
 Match: t1, worlds champion collection
 Status: available
+Riftbound store: https://merch.riotgames.com/de-de/category/riftbound/
 ```
 
 Every new Riftbound merch shop item is posted **regardless of availability** — a
@@ -79,8 +85,9 @@ of:
 | `Status: coming_soon` | announced, not yet orderable |
 | `Status: unknown` | Riot published no clear availability signal |
 
-The daily heartbeat carries **no links** — only counts. New-hit notifications
-always carry the clickable link.
+The daily heartbeat carries **no links** — only counts. New-hit and test messages
+always carry a clickable link, and always end with the clickable **Riftbound store**
+link.
 
 ## How products are discovered
 
@@ -212,7 +219,8 @@ python watcher.py --test-webhook-random-riftbound
 ```
 
 - Sends exactly **one** Discord test message (prefixed `[TEST]`) for one
-  Riftbound **shop / merch item**, containing a **clickable link**. It now prefers
+  Riftbound **shop / merch item**, containing a **clickable link** and always
+  ending with the clickable **Riftbound store** link. It now prefers
   an **available** or **pre-order** item, using availability signals like
   "available" / "in stock" / "lieferbar" / "pre-order" / "vorbestellbar".
 - When real Riot merch Riftbound products are found in the page's **embedded

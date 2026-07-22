@@ -40,6 +40,24 @@ AVAILABLE_HEADER = "Available Riftbound merch items:"
 PREORDER_HEADER = "Preorder Riftbound merch items:"
 UNAVAILABLE_HEADER = "Unavailable / sold out Riftbound merch items:"
 
+# Canonical human-facing Riot merch Riftbound STORE landing page. Mirrors the
+# primary target in ``fetch.DEFAULT_TARGETS``; defined here (not imported from
+# fetch) so notify.py keeps its stdlib-only import surface. Every ITEM
+# notification (a new-hit and the [TEST] message) always carries this as a
+# clickable store link, in ADDITION to any product link. The deliberately
+# link-free status/heartbeat modes never emit it. This is a public merch URL,
+# never a secret.
+RIFTBOUND_STORE_URL = "https://merch.riotgames.com/de-de/category/riftbound/"
+# Label prefixing the store link line; Discord still auto-links the trailing URL.
+STORE_LINK_PREFIX = "Riftbound store: "
+
+
+def _store_link_line() -> str:
+    """The always-present store-link line, e.g.
+    ``"Riftbound store: https://merch.riotgames.com/de-de/category/riftbound/"``.
+    Pure/offline; contains no secret."""
+    return STORE_LINK_PREFIX + RIFTBOUND_STORE_URL
+
 # Path fragments that mark a more specific product / store / collection link.
 _STORE_PATH_HINTS = (
     "/product",
@@ -396,10 +414,13 @@ def format_message(item, reasons=None):
         <title>                     # truncated if needed
         <best_item_url(item)>       # omitted entirely when there is no valid link
         Match: a, b                 # only when ``reasons`` is a non-empty list
+        Riftbound store: <url>      # ALWAYS present (final line)
 
     The best link is emitted as a BARE URL on its own line so Discord renders it
-    clickable. Never contains a secret and stays under Discord's 2000-character
-    content limit (the title is truncated so the header, link, and Match line
+    clickable. The Riftbound store link is ALWAYS appended as the final line, so
+    the message carries a clickable link even when the item has no product link.
+    Never contains a secret and stays under Discord's 2000-character content
+    limit (the title is truncated so the header, link, Match and store line
     always survive).
     """
     item = item or {}
@@ -413,6 +434,8 @@ def format_message(item, reasons=None):
         reason_str = ", ".join(str(r) for r in reasons if r is not None and str(r) != "")
         if reason_str:
             tail_lines.append("Match: " + reason_str)
+    # The store link is unconditional and closes the message.
+    tail_lines.append(_store_link_line())
 
     # Everything except the title is fixed and must survive truncation. Reserve
     # its characters plus one newline per fixed line (the header/link/match joins
@@ -446,14 +469,17 @@ def format_new_item_message(item, special_reasons=None):
         <best_item_url(item)>        # omitted entirely when there is no valid link
         Match: t1, worlds champion collection   # only when special_reasons is non-empty
         Status: available
+        Riftbound store: <url>       # ALWAYS present (final line)
 
     ``special_reasons`` is the (possibly empty) list from
     :func:`relevance.special_reasons`. A non-empty list switches the header to
     the highlight variant and adds the ``Match:`` line — it never decides
     WHETHER a message is sent. The link is a bare URL on its own line so Discord
-    renders it clickable. Never contains a secret; stays under Discord's
-    2000-character limit (the title is truncated so header, link, Match and
-    Status always survive). Pure/offline.
+    renders it clickable. The Riftbound store link is ALWAYS appended as the
+    final line, so the message carries a clickable link even when the item has no
+    product link. Never contains a secret; stays under Discord's 2000-character
+    limit (the title is truncated so header, link, Match, Status and the store
+    line always survive). Pure/offline.
     """
     item = item or {}
     title = str(item.get("title", "")).strip()
@@ -472,6 +498,8 @@ def format_new_item_message(item, special_reasons=None):
     if reason_str:
         tail_lines.append("Match: " + reason_str)
     tail_lines.append("Status: " + availability_status(item))
+    # The store link is unconditional and closes the message.
+    tail_lines.append(_store_link_line())
 
     # Everything except the title is fixed and must survive truncation. Reserve
     # its characters plus one newline per fixed line.

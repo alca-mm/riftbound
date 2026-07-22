@@ -16,6 +16,12 @@ import notify
 FAKE_WEBHOOK = "https://discord.com/api/webhooks/000000000000000000/FAKE_TOKEN_DO_NOT_USE"
 FAKE_TOKEN = "FAKE_TOKEN_DO_NOT_USE"
 
+# The Riot merch Riftbound STORE landing page and the exact labeled line every
+# item notification (new-hit + [TEST]) must always carry. Kept as literals here
+# (not read from notify) so a wrong constant fails the assertion loudly.
+_STORE_URL = "https://merch.riotgames.com/de-de/category/riftbound/"
+_STORE_LINE = "Riftbound store: " + _STORE_URL
+
 
 # ---------------------------------------------------------------------------
 # Fakes / helpers
@@ -360,7 +366,10 @@ def test_format_message_linkless_item_has_no_none_or_empty_link():
     assert "Some title" in msg
     assert "None" not in msg  # never emit the literal None
     assert "\n\n" not in msg  # no dangling empty line where the link would go
-    assert "http" not in msg  # no broken/partial link
+    # No product link exists for this item, but the always-present store link is
+    # the ONLY http(s) URL in the message — no broken/partial product link leaks.
+    assert msg.count("http") == 1
+    assert _STORE_LINE in msg
 
 
 def test_format_message_keeps_link_and_match_when_truncating_long_title():
@@ -707,3 +716,117 @@ def test_heartbeat_empty_list_no_crash_no_links():
     assert notify.HEARTBEAT_HEADER in msg
     assert "available: 0" in msg
     assert _no_links(msg)
+
+
+# ---------------------------------------------------------------------------
+# Riftbound store link — EVERY item notification (a new-hit via
+# format_new_item_message and the [TEST] message via format_message) must
+# ALWAYS carry a clickable link to the Riot merch Riftbound STORE landing page,
+# in ADDITION to any product link. The deliberately link-free status/heartbeat
+# modes must NOT gain the store link.
+# ---------------------------------------------------------------------------
+def _new_item(title, *, url="", source="", text=""):
+    return {"title": title, "url": url, "source": source, "text": text}
+
+
+def test_new_item_message_always_has_store_link_with_product_link():
+    item = _new_item(
+        "Riftbound Origins Champion Deck - Jinx",
+        url="https://merch.riotgames.com/de-de/product/riftbound-origins-jinx",
+        source="https://merch.riotgames.com/de-de/category/riftbound/",
+        text="available",
+    )
+    msg = notify.format_new_item_message(item)
+    # Both links are present: the specific product link AND the store link.
+    assert "https://merch.riotgames.com/de-de/product/riftbound-origins-jinx" in msg
+    assert _STORE_LINE in msg
+
+
+def test_new_item_message_store_link_present_even_without_product_link():
+    # No valid product link (bare '#'), yet the store link guarantees the
+    # message still carries a clickable link.
+    item = _new_item("Riftbound Mystery Item", url="#", source="")
+    msg = notify.format_new_item_message(item)
+    assert notify.best_item_url(item) is None
+    assert _STORE_LINE in msg
+    assert "None" not in msg
+
+
+def test_new_item_message_store_link_present_when_highlighted():
+    item = _new_item(
+        "Riftbound x T1 Worlds Champion Collection",
+        url="https://merch.riotgames.com/de-de/product/riftbound-t1-wcc",
+        source="https://merch.riotgames.com/de-de/category/riftbound/",
+        text="available",
+    )
+    msg = notify.format_new_item_message(item, special_reasons=["t1", "worlds champion collection"])
+    assert notify.HIGHLIGHT_ITEM_HEADER in msg
+    assert "Match: t1, worlds champion collection" in msg
+    assert _STORE_LINE in msg
+
+
+def test_new_item_message_store_link_is_the_final_line():
+    item = _new_item(
+        "Riftbound Deck Box",
+        url="https://merch.riotgames.com/de-de/product/riftbound-deck-box",
+        source="https://merch.riotgames.com/de-de/category/riftbound/",
+        text="available",
+    )
+    msg = notify.format_new_item_message(item)
+    # The store link is the last line, after the Status line.
+    assert msg.split("\n")[-1] == _STORE_LINE
+    assert msg.index("Status:") < msg.index(_STORE_LINE)
+
+
+def test_new_item_message_store_link_survives_long_title_truncation():
+    item = _new_item(
+        "A" * 5000,
+        url="https://merch.riotgames.com/de-de/product/riftbound-long",
+        source="https://merch.riotgames.com/de-de/category/riftbound/",
+        text="available",
+    )
+    msg = notify.format_new_item_message(item)
+    assert len(msg) <= 2000
+    # Header, product link, Status AND the store link all survive truncation.
+    assert "https://merch.riotgames.com/de-de/product/riftbound-long" in msg
+    assert "Status: available" in msg
+    assert _STORE_LINE in msg
+
+
+def test_format_message_always_has_store_link():
+    item = _new_item(
+        "Riftbound x T1 Deck Box",
+        url="https://merch.riotgames.com/products/riftbound-t1-deck",
+        source="https://merch.riotgames.com/",
+    )
+    msg = notify.format_message(item)
+    assert "https://merch.riotgames.com/products/riftbound-t1-deck" in msg
+    assert _STORE_LINE in msg
+    assert msg.split("\n")[-1] == _STORE_LINE
+
+
+def test_format_message_store_link_survives_long_title_truncation():
+    item = _new_item(
+        "A" * 5000,
+        url="https://merch.riotgames.com/products/riftbound-t1",
+        source="https://merch.riotgames.com/",
+    )
+    msg = notify.format_message(item, reasons=["riftbound", "t1"])
+    assert len(msg) <= 2000
+    assert "https://merch.riotgames.com/products/riftbound-t1" in msg
+    assert "Match: riftbound, t1" in msg
+    assert _STORE_LINE in msg
+
+
+def test_store_link_absent_from_status_report_and_heartbeat():
+    # SCOPE GUARD: the store link is only for item notifications. The
+    # deliberately link-free status/heartbeat modes must never contain it.
+    items = [_merch("Riftbound Available Thing", text="available")]
+    assert _STORE_URL not in notify.format_status_report(items)
+    assert _STORE_URL not in notify.format_heartbeat(items)
+
+
+def test_notify_exposes_store_link_constants():
+    # The canonical store URL and label are exported for reuse by watcher/tests.
+    assert notify.RIFTBOUND_STORE_URL == _STORE_URL
+    assert notify.STORE_LINK_PREFIX + notify.RIFTBOUND_STORE_URL == _STORE_LINE
